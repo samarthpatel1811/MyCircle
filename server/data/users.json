@@ -1,0 +1,93 @@
+[
+  {
+    "username": "alice_mvatx2hy",
+    "displayName": "Alice In Wonderland",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "bX7iLD7BlipkBs-toHBGOACIKaChs6oX0D_-AyI2Cck",
+      "y": "5YDg8H3Qwji4uFst8S_Pkh0qWGOnY7vvb44cV3bO_XM",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "vDm49x6hwhwPxlKYbzLgOqt2eJcPFj9eiG-HKf5oZ8s",
+      "y": "E9fComybVetfByT2C-zyxPEfRsMxc_JXDOSB5VKZPbE",
+      "crv": "P-256"
+    },
+    "fingerprint": "cc8af37096d6d1ab3ea0d0ca7b8de6cb",
+    "passkeyCredentials": [],
+    "pinHash": "1eac64312fb0220ae8474580c64aa7fa138adbdd288654e3e2d1dd46f7c424e8",
+    "createdAt": "2026-10-16T10:32:56.101Z",
+    "lastSeen": "2026-10-16T10:32:57.055Z"
+  },
+  {
+    "username": "bob_mvatx2hy",
+    "displayName": "Bob The Builder",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "o9IsK3uENBGMy8yfjYQzMuCEp2k6QXM_eQCmKBjXbZI",
+      "y": "KBzPrV9U-OHQs1-R5Zrm4rjYZslCL69lKs4-VKMfM_E",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "rg-zxlzqUzdvbw1D4tgufqHuFGYMPhSp7RhakV2czc8",
+      "y": "VD6T-nkNM_4cVzU-06kro8FSOfpS0Nw57eWm6WeB56E",
+      "crv": "P-256"
+    },
+    "fingerprint": "92c09aaa16b1efd1e7cf1c47608c2923",
+    "passkeyCredentials": [],
+    "pinHash": "9a09c050b150e2ba4a5d7f82be6ccd52532a7282e34c1e2c498623f34650bbab",
+    "createdAt": "2026-10-16T10:32:56.114Z",
+    "lastSeen": "2026-10-16T10:32:57.055Z"
+  },
+  {
+    "username": "sam patel",
+    "displayName": "Samarth",
+    "ecdhPublicKey": {
+      "crv": "P-256",
+      "ext": true,
+      "key_ops": [],
+      "kty": "EC",
+      "x": "641WXI1yQ83xL4yhoSIgVHBcI18LGdo3Wch4KcGz4YA",
+      "y": "XoPAsbTmsqMxtIjvr2U2WlGPR29rvYpZ-pQjBUDXSdo"
+    },
+    "ecdsaPublicKey": {
+      "crv": "P-256",
+      "ext": true,
+      "key_ops": [
+        "verify"
+      ],
+      "kty": "EC",
+      "x": "vD2MWLf5vHKZ0C1wURhGAizkqWzkCz2PF9M_23Kkuyc",
+      "y": "c2q0Z83VSvBjqzZ0gD6o64V3t0-wUFsrtaIL4DQr5gA"
+    },
+    "fingerprint": "039c9a0e98abafb88b9d0dd5a1e66476",
+    "passkeyCredentials": [
+      {
+        "id": "2HuKtjKOwt3TcuNspaWFiU-WgZo",
+        "publicKey": "pQECAyYgASFYIDjQnx69ka330Knln7LbZ-_U_NwjpFrYYZicxB8vv5ecIlggvej6ZinfxAUfl7KGG72ia--HLo7qIYwnOUja-xC8k74",
+        "counter": 0,
+        "transports": [
+          "internal",
+          "hybrid"
+        ]
+      }
+    ],
+    "pinHash": null,
+    "createdAt": "2026-10-16T10:35:35.406Z",
+    "lastSeen": "2026-10-16T10:35:35.406Z"
+  }
+]
