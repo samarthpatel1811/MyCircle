@@ -62,13 +62,13 @@
       throw new Error(data.error || 'Registration failed. Please try again.');
     }
 
-    // Step 3: Save account and private keys in local IndexedDB
+    // Step 3: Save account and private keys in local IndexedDB (sessionToken: null until explicit login)
     const accountRecord = {
       username: cleanUsername,
       displayName: cleanFullName,
       jwk: identity.jwk,
       fingerprint: identity.fingerprint,
-      sessionToken: data.token,
+      sessionToken: null,
       authMethod: 'password'
     };
 

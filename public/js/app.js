@@ -355,11 +355,27 @@
       btnSignupSubmit.innerHTML = '<span>Creating Secure Account...</span>';
 
       try {
-        const account = await window.MyCircleAuth.register(fullName, username, password, confirmPassword);
-        showAuthSuccess('Account created successfully! Welcome to MyCircle.');
-        setTimeout(() => {
-          onAuthSuccess(account);
-        }, 400);
+        await window.MyCircleAuth.register(fullName, username, password, confirmPassword);
+        
+        // Reset signup form
+        formSignup.reset();
+
+        // Redirect to Login view instead of entering home chat view
+        viewSignup.style.display = 'none';
+        viewLogin.style.display = 'block';
+
+        // Pre-fill username on login screen and focus password
+        const loginUsernameInput = document.getElementById('login-username');
+        const loginPasswordInput = document.getElementById('login-password');
+        if (loginUsernameInput) {
+          loginUsernameInput.value = username;
+        }
+        if (loginPasswordInput) {
+          loginPasswordInput.value = '';
+          loginPasswordInput.focus();
+        }
+
+        showAuthSuccess(`Account @${escapeHTML(username)} created successfully! Please log in with your password.`);
       } catch (err) {
         showAuthError(err.message || 'Registration failed. Please choose another username.');
       } finally {

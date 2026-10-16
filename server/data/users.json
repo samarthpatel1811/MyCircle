@@ -540,5 +540,61 @@
     "pinHash": null,
     "createdAt": "2026-10-16T16:46:38.820Z",
     "lastSeen": "2026-10-16T16:46:39.762Z"
+  },
+  {
+    "username": "user1_mvb7lz8r",
+    "displayName": "User One mvb7lz8r",
+    "passwordHash": "a3fdfc972c8f2b734eee31bec972f283:d278e3c30a44b88ca27d1d00a07f1ebd6575d428cac66a07c550576d441f4b22f6a6dcf70310d81e3e1418f8c94f71fe6ba4f447098ee074ae5ec8f5a4361d65",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "i5ArwIrlybnwafRC9GFxktPQD1s_g5C0bL3iqqKhl20",
+      "y": "CfGCVYjnpCEYWc6uMb3zgLIB9VKnz1MnVuyUPhncyUM",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "4hIk6T38AZAPEpCDpGbhdR8GsaSjcKH9IP1XPdYmQGE",
+      "y": "Tdaa3Fl8WKU5AusOr0kE5MNNWHXeb8IUbT4aBuWvtuE",
+      "crv": "P-256"
+    },
+    "fingerprint": "699609e1115cd543d73aa7dd9beb9113",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:56:13.356Z",
+    "lastSeen": "2026-10-16T16:56:13.356Z"
+  },
+  {
+    "username": "user2_mvb7lz8r",
+    "displayName": "Test User Two",
+    "passwordHash": "041a4e2b8ab536cf20409f5216fa89be:3e0ad1ae412c5b641c367cdd411dd51a2eb935787a8b7cc15b1f3233a77fe88a3d35606a9191af260cde98fdaecf0400361b8f40bf897f3d733e8404abfb78e2",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "P7zzjffRH67Z34VdGfYrXjy6h33or3GVXNzGQaT0SCc",
+      "y": "s5UPW3-l7Lmo5wsfyqdi1tT1yR1aA-5_0l44wEXXUNc",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "Nr-__UKyeV-oEdY8gSLNasWJHTyRga759yp6zuPKoLI",
+      "y": "qVynxyRGjfg45HPqZZ-CzTzDCByaGJRfNFfkdjNTIGU",
+      "crv": "P-256"
+    },
+    "fingerprint": "73d61f21c98f4631d3c81b14565e00bc",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:56:13.414Z",
+    "lastSeen": "2026-10-16T16:56:13.414Z"
   }
 ]

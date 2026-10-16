@@ -38,5 +38,15 @@
     "status": "accepted",
     "createdAt": 1792169189199,
     "updatedAt": 1792169189208
+  },
+  {
+    "id": "req_mvb7lzlq_0f469de1",
+    "fromUsername": "user2_mvb7lz8r",
+    "fromDisplayName": "Test User Two",
+    "toUsername": "user1_mvb7lz8r",
+    "joinKey": "MCUWBSSVMHUO",
+    "status": "accepted",
+    "createdAt": 1792169773695,
+    "updatedAt": 1792169773704
   }
 ]

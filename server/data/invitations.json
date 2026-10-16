@@ -60,5 +60,18 @@
     "isRevoked": false,
     "useCount": 0,
     "maxUses": null
+  },
+  {
+    "code": "MCUWBSSVMHUO",
+    "creatorUsername": "user1_mvb7lz8r",
+    "creatorDisplayName": "User One mvb7lz8r",
+    "type": "direct",
+    "groupId": null,
+    "groupName": null,
+    "createdAt": 1792169773686,
+    "expiresAt": 1792774573686,
+    "isRevoked": false,
+    "useCount": 0,
+    "maxUses": null
   }
 ]
