@@ -18,11 +18,18 @@ function hashPassword(password) {
 }
 
 function verifyPassword(password, storedHash) {
-  if (!storedHash || !storedHash.includes(':')) return false;
-  const [salt, key] = storedHash.split(':');
-  const keyBuffer = Buffer.from(key, 'hex');
-  const derivedKey = crypto.scryptSync(password, salt, 64);
-  return crypto.timingSafeEqual(keyBuffer, derivedKey);
+  try {
+    if (!storedHash || typeof storedHash !== 'string' || !storedHash.includes(':')) return false;
+    const [salt, key] = storedHash.split(':');
+    if (!salt || !key) return false;
+    const keyBuffer = Buffer.from(key, 'hex');
+    const derivedKey = crypto.scryptSync(password, salt, 64);
+    if (keyBuffer.length !== derivedKey.length) return false;
+    return crypto.timingSafeEqual(keyBuffer, derivedKey);
+  } catch (err) {
+    console.error('Password verification error:', err);
+    return false;
+  }
 }
 
 class UsersDirectory {
@@ -37,7 +44,7 @@ class UsersDirectory {
         const raw = fs.readFileSync(USERS_FILE, 'utf8');
         const list = JSON.parse(raw);
         list.forEach(u => {
-          const cleanUser = (u.username || '').toLowerCase().trim();
+          const cleanUser = (u.username || '').toLowerCase().trim().replace(/^@+/, '');
           if (cleanUser) {
             this.users.set(cleanUser, {
               ...u,
@@ -75,17 +82,54 @@ class UsersDirectory {
   }
 
   getUser(username) {
-    if (!username) return null;
-    return this.users.get(username.toLowerCase().trim()) || null;
+    if (!username || typeof username !== 'string') return null;
+    const clean = username.trim().replace(/^@+/, '').toLowerCase();
+    if (!clean) return null;
+
+    // 1. Direct username lookup
+    if (this.users.has(clean)) {
+      return this.users.get(clean);
+    }
+
+    // 2. Alphanumeric normalized username lookup (e.g. sam_patel1811 vs sampatel1811 vs sam patel)
+    const cleanAlpha = clean.replace(/[^a-z0-9]/g, '');
+    for (const u of this.users.values()) {
+      const uAlpha = (u.username || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (uAlpha && uAlpha === cleanAlpha) {
+        return u;
+      }
+    }
+
+    // 3. Exact case-insensitive match on displayName
+    for (const u of this.users.values()) {
+      if (u.displayName && u.displayName.trim().toLowerCase() === clean) {
+        return u;
+      }
+    }
+
+    // 4. Alphanumeric match on displayName if search query is at least 3 characters
+    if (cleanAlpha.length >= 3) {
+      for (const u of this.users.values()) {
+        if (u.displayName) {
+          const dAlpha = u.displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (dAlpha && dAlpha === cleanAlpha) {
+            return u;
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
   hasUser(username) {
-    if (!username) return false;
-    return this.users.has(username.toLowerCase().trim());
+    if (!username || typeof username !== 'string') return false;
+    const clean = username.trim().replace(/^@+/, '').toLowerCase();
+    return this.users.has(clean);
   }
 
   registerUserWithPassword({ username, displayName, password, ecdhPublicKey, ecdsaPublicKey, fingerprint }) {
-    const cleanUsername = username.toLowerCase().trim();
+    const cleanUsername = String(username).trim().replace(/^@+/, '').toLowerCase();
     if (this.users.has(cleanUsername)) {
       throw new Error(`Username @${cleanUsername} is already taken. Please choose another username.`);
     }
@@ -117,7 +161,14 @@ class UsersDirectory {
   }
 
   verifyUserCredentials(username, password) {
-    const clean = (username || '').toLowerCase().trim();
+    if (!username) {
+      return { ok: false, reason: 'ACCOUNT_NOT_FOUND' };
+    }
+    if (!password) {
+      return { ok: false, reason: 'INVALID_PASSWORD' };
+    }
+
+    const clean = String(username).trim().replace(/^@+/, '').toLowerCase();
     const user = this.getUser(clean);
     if (!user) {
       return { ok: false, reason: 'ACCOUNT_NOT_FOUND' };
@@ -134,7 +185,8 @@ class UsersDirectory {
 
     // 2. Check legacy pinHash if user originally created with PIN
     if (user.pinHash) {
-      const testPinHash = crypto.createHash('sha256').update(password + clean).digest('hex');
+      const cleanUser = user.username.toLowerCase().trim();
+      const testPinHash = crypto.createHash('sha256').update(password + cleanUser).digest('hex');
       if (testPinHash === user.pinHash) {
         // Upgrade user to scrypt password hash seamlessly!
         user.passwordHash = hashPassword(password);
@@ -142,6 +194,14 @@ class UsersDirectory {
         return { ok: true, user };
       }
       return { ok: false, reason: 'INVALID_PASSWORD' };
+    }
+
+    // 3. Legacy account repair: If user account has neither passwordHash nor pinHash,
+    // and user provides a valid password (>= 4 characters), set passwordHash now and authenticate!
+    if (!user.passwordHash && !user.pinHash && password.length >= 4) {
+      user.passwordHash = hashPassword(password);
+      this.save();
+      return { ok: true, user };
     }
 
     return { ok: false, reason: 'NO_PASSWORD_SET' };

@@ -80,7 +80,7 @@
    * Log in an existing user with Username and Password
    */
   async function login(username, password) {
-    const cleanUsername = (username || '').toLowerCase().trim();
+    const cleanUsername = (username || '').trim().replace(/^@+/, '');
 
     if (!cleanUsername) {
       throw new Error('Please enter your username.');
@@ -89,23 +89,34 @@
       throw new Error('Please enter your password.');
     }
 
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: cleanUsername,
-        password
-      })
-    });
+    let res;
+    try {
+      res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: cleanUsername,
+          password
+        })
+      });
+    } catch (netErr) {
+      throw new Error('Unable to connect to the server. Please check your internet connection and try again.');
+    }
 
-    const data = await res.json();
+    let data;
+    try {
+      data = await res.json();
+    } catch (parseErr) {
+      throw new Error('Server returned an unexpected response. Please try again.');
+    }
+
     if (!res.ok) {
-      throw new Error(data.error || 'Login failed. Please check your credentials.');
+      throw new Error((data && data.error) || 'Login failed. Please check your credentials.');
     }
 
     // Check if this device already has identity keys for this username
     let account = await window.MyCircleStorage.getAccount();
-    if (!account || account.username !== cleanUsername || !account.jwk) {
+    if (!account || account.username !== data.user.username || !account.jwk) {
       // Generate device identity keys if signing in on a new device/browser
       const identity = await window.MyCircleCrypto.generateIdentityKeyPairs();
       account = {
@@ -136,12 +147,16 @@
       const res = await fetch('/api/auth/session/me', {
         headers: { Authorization: `Bearer ${account.sessionToken}` }
       });
-      if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
         // Token expired or invalid
         return null;
       }
+      if (!res.ok) {
+        // Server temporary error (e.g. 502/503 during restart) - preserve session
+        return account;
+      }
       const data = await res.json();
-      if (data.user) {
+      if (data && data.user) {
         account.displayName = data.user.displayName || account.displayName;
         await window.MyCircleStorage.saveAccount(account);
       }

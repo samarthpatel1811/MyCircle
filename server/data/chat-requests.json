@@ -28,5 +28,15 @@
     "status": "accepted",
     "createdAt": 1792166797233,
     "updatedAt": 1792166797242
+  },
+  {
+    "id": "req_mvb79glq_c5abb45c",
+    "fromUsername": "user2_mvb79g8u",
+    "fromDisplayName": "Test User Two",
+    "toUsername": "user1_mvb79g8u",
+    "joinKey": "MCV02T91YJ3Z",
+    "status": "accepted",
+    "createdAt": 1792169189199,
+    "updatedAt": 1792169189208
   }
 ]

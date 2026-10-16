@@ -50,19 +50,22 @@ class InvitationsService {
     }
   }
 
-  // Generate clean, readable join keys e.g. MYC-7K9P-4X2M
+  // Generate clean, random alphanumeric join keys (letters A-Z and digits 0-9 only, e.g. MC7K9P2X8B4D)
   generateJoinKey() {
-    const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // exclude ambiguous 0,1,O,I
-    let part1 = '';
-    let part2 = '';
-    const bytes = crypto.randomBytes(8);
-    for (let i = 0; i < 4; i++) part1 += chars[bytes[i] % chars.length];
-    for (let i = 4; i < 8; i++) part2 += chars[bytes[i] % chars.length];
-    return `MYC-${part1}-${part2}`;
+    const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let code;
+    do {
+      const bytes = crypto.randomBytes(10);
+      let body = '';
+      for (let i = 0; i < 10; i++) {
+        body += chars[bytes[i] % chars.length];
+      }
+      code = `MC${body}`;
+    } while (this.invitations.has(code));
+    return code;
   }
 
-  createInvitation({ creatorUsername, creatorDisplayName, type = 'direct', groupId = null, groupName = null, expiresInDays = 7 }) {
-    // Revoke any existing active direct invitations for this user to keep it clean, or allow new
+  createInvitation({ creatorUsername, creatorDisplayName, type = 'direct', groupId = null, groupName = null, expiresInDays = 7, maxUses = null }) {
     const code = this.generateJoinKey();
     const expiresAt = Date.now() + (expiresInDays * 24 * 60 * 60 * 1000);
 
@@ -76,7 +79,8 @@ class InvitationsService {
       createdAt: Date.now(),
       expiresAt,
       isRevoked: false,
-      useCount: 0
+      useCount: 0,
+      maxUses: maxUses || null
     };
 
     this.invitations.set(code, invitation);
@@ -86,7 +90,10 @@ class InvitationsService {
 
   getInvitation(code) {
     if (!code) return null;
-    const cleanCode = code.toUpperCase().trim();
+    const cleanCode = String(code).trim().replace(/[\s\-_]/g, '').toUpperCase();
+    if (!/^[A-Z0-9]{6,32}$/.test(cleanCode)) {
+      return { error: 'Invalid join key format. Keys contain only letters and numbers (e.g. MC7K9P2X8B4D).' };
+    }
     const inv = this.invitations.get(cleanCode);
     if (!inv) return null;
 
@@ -95,6 +102,9 @@ class InvitationsService {
     }
     if (Date.now() > inv.expiresAt) {
       return { error: 'This invitation key has expired. Please ask for a new invite.' };
+    }
+    if (inv.maxUses && inv.useCount >= inv.maxUses) {
+      return { error: 'This invitation key has already been used.' };
     }
 
     return inv;
@@ -111,7 +121,7 @@ class InvitationsService {
   }
 
   revokeInvitation(code, username) {
-    const cleanCode = code.toUpperCase().trim();
+    const cleanCode = String(code).trim().replace(/[\s\-_]/g, '').toUpperCase();
     const inv = this.invitations.get(cleanCode);
     if (!inv) return false;
     if (inv.creatorUsername !== username.toLowerCase().trim()) return false;

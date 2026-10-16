@@ -34,5 +34,18 @@
     "expiresAt": 1792771597224,
     "isRevoked": false,
     "useCount": 0
+  },
+  {
+    "code": "MCV02T91YJ3Z",
+    "creatorUsername": "user1_mvb79g8u",
+    "creatorDisplayName": "User One mvb79g8u",
+    "type": "direct",
+    "groupId": null,
+    "groupName": null,
+    "createdAt": 1792169189186,
+    "expiresAt": 1792773989186,
+    "isRevoked": false,
+    "useCount": 0,
+    "maxUses": null
   }
 ]

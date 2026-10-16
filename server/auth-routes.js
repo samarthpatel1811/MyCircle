@@ -143,7 +143,7 @@ function handleLogin(req, res) {
       return res.status(400).json({ error: 'Please enter your password.' });
     }
 
-    const cleanUsername = username.toLowerCase().trim();
+    const cleanUsername = username.trim().replace(/^@+/, '');
     const result = usersDirectory.verifyUserCredentials(cleanUsername, effectivePassword);
 
     if (!result.ok) {
@@ -158,7 +158,7 @@ function handleLogin(req, res) {
         });
       }
       return res.status(401).json({
-        error: 'Unable to authenticate account with this password. If you registered using a Passkey, please sign in with your Passkey.'
+        error: 'Unable to authenticate account with this password. Please check your credentials.'
       });
     }
 

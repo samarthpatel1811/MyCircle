@@ -291,10 +291,11 @@
         const account = await window.MyCircleAuth.login(username, password);
         onAuthSuccess(account);
       } catch (err) {
+        const cleanUser = username.replace(/^@+/, '').trim();
         // Helpful error handling: if account doesn't exist, show clear action
         if (err.message && err.message.toLowerCase().includes('not found')) {
           authError.innerHTML = `
-            <span>Account <strong>@${escapeHTML(username)}</strong> does not exist yet.</span>
+            <span>Account <strong>@${escapeHTML(cleanUser)}</strong> does not exist yet.</span>
             <div style="margin-top: 0.35rem;">
               <a href="javascript:void(0)" id="link-error-signup" style="color: inherit; text-decoration: underline; font-weight: 700;">Create an account now</a>
             </div>
@@ -307,7 +308,7 @@
               viewSignup.style.display = 'block';
               clearAuthAlerts();
               const signupUser = document.getElementById('signup-username');
-              if (signupUser) signupUser.value = username;
+              if (signupUser) signupUser.value = cleanUser;
               const signupName = document.getElementById('signup-fullname');
               if (signupName) signupName.focus();
             });
@@ -1175,9 +1176,22 @@
       if (!activeJoinKey) return;
       try {
         await navigator.clipboard.writeText(activeJoinKey);
-        showToast(`Join Key ${activeJoinKey} copied!`);
+        showToast(`Join Key ${activeJoinKey} copied to clipboard!`);
       } catch (e) {
-        showToast(`Key: ${activeJoinKey}`);
+        try {
+          const temp = document.createElement('textarea');
+          temp.value = activeJoinKey;
+          temp.style.position = 'fixed';
+          temp.style.opacity = '0';
+          document.body.appendChild(temp);
+          temp.focus();
+          temp.select();
+          document.execCommand('copy');
+          document.body.removeChild(temp);
+          showToast(`Join Key ${activeJoinKey} copied!`);
+        } catch (err) {
+          showToast(`Key: ${activeJoinKey}`);
+        }
       }
     });
   }
@@ -1229,9 +1243,15 @@
   let verifiedInvitation = null;
 
   async function lookupJoinKey(code) {
-    const cleanCode = (code || '').toUpperCase().trim();
-    if (!cleanCode) {
+    const raw = (code || '').trim();
+    if (!raw) {
       return showToast('Please enter a join key.');
+    }
+
+    // Normalize: strip accidental spaces and uppercase
+    const cleanCode = raw.replace(/\s+/g, '').toUpperCase();
+    if (!/^[A-Z0-9]{6,32}$/.test(cleanCode)) {
+      return showToast('Join key must contain only English letters and numbers (A-Z, 0-9).');
     }
 
     btnVerifyJoinKey.disabled = true;
@@ -1276,6 +1296,11 @@
   }
 
   if (inputEnterJoinKey) {
+    inputEnterJoinKey.addEventListener('input', () => {
+      // Auto-uppercase and clean spaces/hyphens so paste works effortlessly
+      inputEnterJoinKey.value = inputEnterJoinKey.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    });
+
     inputEnterJoinKey.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();

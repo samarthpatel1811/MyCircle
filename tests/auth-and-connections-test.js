@@ -32,11 +32,14 @@ async function runAuthAndConnectionsTestSuite() {
   const user1 = `user1_${ts}`;
   const user2 = `user2_${ts}`;
 
+  const displayName1 = `User One ${ts}`;
+  const displayName2 = `User Two ${ts}`;
+
   // 1. Password Mismatch
   console.log('1. Testing registration password mismatch validation...');
   const keyPair1 = await MyCircleCrypto.generateIdentityKeyPairs();
   const mismatchRes = await postJSON('/api/auth/register', {
-    fullName: 'Test User One',
+    fullName: displayName1,
     username: user1,
     password: 'password123',
     confirmPassword: 'differentpassword',
@@ -52,7 +55,7 @@ async function runAuthAndConnectionsTestSuite() {
   // 2. Successful Registration of User 1
   console.log('\n2. Testing successful registration of User 1...');
   const reg1 = await postJSON('/api/auth/register', {
-    fullName: 'Test User One',
+    fullName: displayName1,
     username: user1,
     password: 'securepassword123',
     confirmPassword: 'securepassword123',
@@ -129,7 +132,37 @@ async function runAuthAndConnectionsTestSuite() {
   assert.strictEqual(loginRes.ok, true);
   assert(loginRes.data.token, 'Session token returned');
   assert.strictEqual(loginRes.data.user.username, user1);
-  console.log('  ✓ Logged in successfully with valid session token');
+  console.log('  ✓ Logged in successfully with exact username');
+
+  // 7b. Login with leading @ (e.g. @username)
+  console.log('\n7b. Testing login with leading @ (e.g. @username)...');
+  const loginAtRes = await postJSON('/api/auth/login', {
+    username: `@${user1}`,
+    password: 'securepassword123'
+  });
+  assert.strictEqual(loginAtRes.ok, true, 'Login with @username should succeed');
+  assert.strictEqual(loginAtRes.data.user.username, user1);
+  console.log('  ✓ Login with @username succeeded');
+
+  // 7c. Login with Display Name
+  console.log(`\n7c. Testing login using Display Name ("${displayName1}")...`);
+  const loginDisplayRes = await postJSON('/api/auth/login', {
+    username: displayName1,
+    password: 'securepassword123'
+  });
+  assert.strictEqual(loginDisplayRes.ok, true, 'Login with display name should resolve to user');
+  assert.strictEqual(loginDisplayRes.data.user.username, user1);
+  console.log('  ✓ Login with display name succeeded');
+
+  // 7d. Testing legacy passkey account without passwordHash auto-repair
+  console.log('\n7d. Testing legacy account without passwordHash auto-repair...');
+  const legacyLoginRes = await postJSON('/api/auth/login', {
+    username: 'sam patel',
+    password: 'mypassword123'
+  });
+  assert.strictEqual(legacyLoginRes.ok, true, 'Legacy account without password should be repaired and logged in');
+  assert.strictEqual(legacyLoginRes.data.user.username, 'sam patel');
+  console.log('  ✓ Legacy account auto-repaired and authenticated successfully');
 
   // 8. Session Token Verification (/api/auth/session/me)
   console.log('\n8. Testing session persistence check (/api/auth/session/me)...');
@@ -139,23 +172,40 @@ async function runAuthAndConnectionsTestSuite() {
   console.log('  ✓ Session token validated successfully');
 
   // 9. Generate Join Key (Option B) & QR Invite (Option A)
-  console.log('\n9. Testing Join Key generation & QR invite creation...');
+  console.log('\n9. Testing Join Key generation & format validation...');
   const inviteRes = await postJSON('/api/auth/invitations/create', { type: 'direct' }, token1);
   assert.strictEqual(inviteRes.ok, true);
-  assert(inviteRes.data.invitation.code.startsWith('MYC-'), 'Join key formatted as MYC-XXXX-XXXX');
-  assert(inviteRes.data.joinUrl.includes(inviteRes.data.invitation.code), 'Join URL created');
   const joinKey = inviteRes.data.invitation.code;
-  console.log(`  ✓ Generated Join Key: ${joinKey} (URL: ${inviteRes.data.joinUrl})`);
+  assert(/^MC[A-Z0-9]{10}$/.test(joinKey), 'Join key must be 12 uppercase letters/numbers with prefix MC (e.g. MC7K9P2X8B4D)');
+  assert(!joinKey.includes('-'), 'Join key must not contain hyphens');
+  assert(!joinKey.includes('_'), 'Join key must not contain underscores');
+  assert(!joinKey.includes(' '), 'Join key must not contain spaces');
+  assert(inviteRes.data.joinUrl.includes(joinKey), 'Join URL created');
+  console.log(`  ✓ Generated Join Key: ${joinKey} (strictly letters A-Z and digits 0-9)`);
 
   // 10. Verify / Look Up Join Key
   console.log('\n10. Testing Join Key lookup by User 2...');
   const lookupRes = await getJSON(`/api/auth/invitations/lookup/${joinKey}`);
   assert.strictEqual(lookupRes.ok, true);
   assert.strictEqual(lookupRes.data.creator.username, user1);
-  assert.strictEqual(lookupRes.data.creator.displayName, 'Test User One');
+  assert.strictEqual(lookupRes.data.creator.displayName, displayName1);
   assert(lookupRes.data.creator.ecdhPublicKey, 'Public ECDH key included');
   assert(!lookupRes.data.creator.passwordHash, 'NEVER expose password hash');
   console.log(`  ✓ User 2 looked up join key and identified @${user1} ("Test User One")`);
+
+  // 10b. Test case-insensitivity and accidental whitespace on join key
+  console.log('\n10b. Testing join key with lowercase and surrounding whitespace...');
+  const lowercasePaddedKey = `  ${joinKey.toLowerCase()}  `;
+  const lookupPaddedRes = await getJSON(`/api/auth/invitations/lookup/${encodeURIComponent(lowercasePaddedKey)}`);
+  assert.strictEqual(lookupPaddedRes.ok, true, 'Lookup with lowercase and spaces should normalize and succeed');
+  assert.strictEqual(lookupPaddedRes.data.creator.username, user1);
+  console.log('  ✓ Normalized lowercase and whitespace successfully');
+
+  // 10c. Test invalid format rejection
+  console.log('\n10c. Testing invalid join key rejection...');
+  const invalidKeyRes = await getJSON('/api/auth/invitations/lookup/INVALID-KEY-123!!!');
+  assert.strictEqual(invalidKeyRes.ok, false);
+  console.log('  ✓ Invalid join key properly rejected with error');
 
   // 11. Send Chat Request from User 2 to User 1
   console.log('\n11. Testing Chat Request sending (permissioned connection)...');
