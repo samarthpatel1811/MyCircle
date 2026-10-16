@@ -1,7 +1,7 @@
 /**
  * MyCircle Authentication Module
- * Handles WebAuthn Passkeys and Fallback PIN/Device Authentication
- * Keeps Authentication strictly separate from Encryption Keys as required.
+ * Simple, reliable username/password authentication with server-side scrypt hashing
+ * Decouples authentication from client-side Web Crypto identity keys.
  */
 
 (function (root, factory) {
@@ -13,187 +13,44 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  function isWebAuthnSupported() {
-    return !!(
-      window.PublicKeyCredential &&
-      navigator.credentials &&
-      navigator.credentials.create &&
-      navigator.credentials.get
-    );
-  }
-
   /**
-   * Register a new user with WebAuthn Passkey
+   * Register a new user with Full Name, Username, Password and Confirm Password
    */
-  async function registerWithPasskey(username, displayName) {
-    if (!isWebAuthnSupported()) {
-      throw new Error('Your browser or device does not support WebAuthn passkeys. Please use the Device Key / PIN setup below.');
-    }
+  async function register(fullName, username, password, confirmPassword) {
+    const cleanUsername = (username || '').toLowerCase().trim();
+    const cleanFullName = (fullName || '').trim() || cleanUsername;
 
-    const cleanUsername = username.toLowerCase().trim();
+    if (!cleanFullName) {
+      throw new Error('Please enter your full name.');
+    }
     if (!cleanUsername) {
-      throw new Error('Please enter a username');
+      throw new Error('Please choose a username.');
+    }
+    if (!/^[a-zA-Z0-9_-]{3,24}$/.test(cleanUsername)) {
+      throw new Error('Username must be 3-24 characters (letters, numbers, hyphens, underscores).');
+    }
+    if (!password) {
+      throw new Error('Please enter a password.');
+    }
+    if (password.length < 6) {
+      throw new Error('Password must be at least 6 characters long.');
+    }
+    if (password !== confirmPassword) {
+      throw new Error('Passwords do not match. Please verify both password fields.');
     }
 
     // Step 1: Generate identity encryption & signing keys locally on this device
     const identity = await window.MyCircleCrypto.generateIdentityKeyPairs();
 
-    // Step 2: Fetch registration options from server
-    const optionsRes = await fetch('/api/auth/passkey/register-options', {
+    // Step 2: Register with server
+    const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        fullName: cleanFullName,
         username: cleanUsername,
-        displayName: displayName || cleanUsername
-      })
-    });
-
-    const optionsData = await optionsRes.json();
-    if (!optionsRes.ok) {
-      throw new Error(optionsData.error || 'Failed to start passkey registration');
-    }
-
-    // Step 3: Trigger browser passkey creation modal (Touch ID, Face ID, Windows Hello, YubiKey)
-    let regResponse;
-    try {
-      regResponse = await window.SimpleWebAuthnBrowser.startRegistration({
-        optionsJSON: optionsData
-      });
-    } catch (err) {
-      console.warn('WebAuthn registration error:', err);
-      if (err.name === 'NotAllowedError') {
-        throw new Error('Passkey creation was cancelled or timed out.');
-      }
-      throw new Error(`Passkey creation failed: ${err.message}. You can use Device Key / PIN setup instead.`);
-    }
-
-    // Step 4: Verify passkey response with server & submit public keys
-    const verifyRes = await fetch('/api/auth/passkey/register-verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: cleanUsername,
-        displayName: displayName || cleanUsername,
-        registrationResponse: regResponse,
-        ecdhPublicKey: identity.jwk.ecdhPublic,
-        ecdsaPublicKey: identity.jwk.ecdsaPublic,
-        fingerprint: identity.fingerprint
-      })
-    });
-
-    const verifyData = await verifyRes.json();
-    if (!verifyRes.ok) {
-      throw new Error(verifyData.error || 'Passkey verification failed on server');
-    }
-
-    // Step 5: Save identity keys and credentials to local device storage (IndexedDB)
-    const accountRecord = {
-      username: cleanUsername,
-      displayName: displayName || cleanUsername,
-      jwk: identity.jwk,
-      fingerprint: identity.fingerprint,
-      sessionToken: verifyData.token,
-      authMethod: 'passkey'
-    };
-
-    await window.MyCircleStorage.saveAccount(accountRecord);
-    return accountRecord;
-  }
-
-  /**
-   * Log in existing user with WebAuthn Passkey
-   */
-  async function loginWithPasskey(username) {
-    if (!isWebAuthnSupported()) {
-      throw new Error('Your browser or device does not support WebAuthn passkeys.');
-    }
-
-    const cleanUsername = (username || '').toLowerCase().trim();
-
-    // Step 1: Fetch authentication options from server
-    const optionsRes = await fetch('/api/auth/passkey/login-options', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: cleanUsername })
-    });
-
-    const optionsData = await optionsRes.json();
-    if (!optionsRes.ok) {
-      throw new Error(optionsData.error || 'Failed to initiate passkey sign-in');
-    }
-
-    const { sessionKey } = optionsData;
-
-    // Step 2: Trigger browser passkey ceremony
-    let authResponse;
-    try {
-      authResponse = await window.SimpleWebAuthnBrowser.startAuthentication({
-        optionsJSON: optionsData
-      });
-    } catch (err) {
-      console.warn('WebAuthn login error:', err);
-      if (err.name === 'NotAllowedError') {
-        throw new Error('Passkey sign-in was cancelled or timed out.');
-      }
-      throw new Error(`Passkey sign-in failed: ${err.message}`);
-    }
-
-    // Step 3: Verify with server
-    const verifyRes = await fetch('/api/auth/passkey/login-verify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sessionKey,
-        authenticationResponse: authResponse,
-        username: cleanUsername
-      })
-    });
-
-    const verifyData = await verifyRes.json();
-    if (!verifyRes.ok) {
-      throw new Error(verifyData.error || 'Passkey verification failed');
-    }
-
-    // Check if local device already has identity keys
-    let account = await window.MyCircleStorage.getAccount();
-    if (!account || account.username !== verifyData.user.username) {
-      // If keys are not in local storage on this specific device,
-      // generate fresh local identity keys for this device session
-      const identity = await window.MyCircleCrypto.generateIdentityKeyPairs();
-      account = {
-        username: verifyData.user.username,
-        displayName: verifyData.user.displayName,
-        jwk: identity.jwk,
-        fingerprint: identity.fingerprint,
-        sessionToken: verifyData.token,
-        authMethod: 'passkey'
-      };
-    } else {
-      account.sessionToken = verifyData.token;
-      account.authMethod = 'passkey';
-    }
-
-    await window.MyCircleStorage.saveAccount(account);
-    return account;
-  }
-
-  /**
-   * Fallback Device-Key / Secure PIN Registration
-   */
-  async function registerFallback(username, displayName, pin) {
-    const cleanUsername = username.toLowerCase().trim();
-    if (!cleanUsername) throw new Error('Please enter a username');
-
-    // Generate local cryptographic identity keys
-    const identity = await window.MyCircleCrypto.generateIdentityKeyPairs();
-
-    const res = await fetch('/api/auth/register-fallback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: cleanUsername,
-        displayName: displayName || cleanUsername,
-        pin,
+        password,
+        confirmPassword,
         ecdhPublicKey: identity.jwk.ecdhPublic,
         ecdsaPublicKey: identity.jwk.ecdsaPublic,
         fingerprint: identity.fingerprint
@@ -202,16 +59,17 @@
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error || 'Registration failed');
+      throw new Error(data.error || 'Registration failed. Please try again.');
     }
 
+    // Step 3: Save account and private keys in local IndexedDB
     const accountRecord = {
       username: cleanUsername,
-      displayName: displayName || cleanUsername,
+      displayName: cleanFullName,
       jwk: identity.jwk,
       fingerprint: identity.fingerprint,
       sessionToken: data.token,
-      authMethod: 'device-pin'
+      authMethod: 'password'
     };
 
     await window.MyCircleStorage.saveAccount(accountRecord);
@@ -219,25 +77,36 @@
   }
 
   /**
-   * Fallback Device-Key / Secure PIN Login
+   * Log in an existing user with Username and Password
    */
-  async function loginFallback(username, pin) {
+  async function login(username, password) {
     const cleanUsername = (username || '').toLowerCase().trim();
-    if (!cleanUsername) throw new Error('Please enter your username');
 
-    const res = await fetch('/api/auth/login-fallback', {
+    if (!cleanUsername) {
+      throw new Error('Please enter your username.');
+    }
+    if (!password) {
+      throw new Error('Please enter your password.');
+    }
+
+    const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: cleanUsername, pin })
+      body: JSON.stringify({
+        username: cleanUsername,
+        password
+      })
     });
 
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.error || 'Sign in failed');
+      throw new Error(data.error || 'Login failed. Please check your credentials.');
     }
 
+    // Check if this device already has identity keys for this username
     let account = await window.MyCircleStorage.getAccount();
-    if (!account || account.username !== data.user.username) {
+    if (!account || account.username !== cleanUsername || !account.jwk) {
+      // Generate device identity keys if signing in on a new device/browser
       const identity = await window.MyCircleCrypto.generateIdentityKeyPairs();
       account = {
         username: data.user.username,
@@ -245,11 +114,11 @@
         jwk: identity.jwk,
         fingerprint: identity.fingerprint,
         sessionToken: data.token,
-        authMethod: 'device-pin'
+        authMethod: 'password'
       };
     } else {
       account.sessionToken = data.token;
-      account.authMethod = 'device-pin';
+      account.displayName = data.user.displayName || account.displayName;
     }
 
     await window.MyCircleStorage.saveAccount(account);
@@ -268,11 +137,17 @@
         headers: { Authorization: `Bearer ${account.sessionToken}` }
       });
       if (!res.ok) {
+        // Token expired or invalid
         return null;
+      }
+      const data = await res.json();
+      if (data.user) {
+        account.displayName = data.user.displayName || account.displayName;
+        await window.MyCircleStorage.saveAccount(account);
       }
       return account;
     } catch (err) {
-      // Offline fallback: if network is down, allow accessing local offline history
+      // Offline fallback: allow accessing local chat history when network is disconnected
       console.warn('Network offline, using local cached account');
       return account;
     }
@@ -290,11 +165,8 @@
   }
 
   return {
-    isWebAuthnSupported,
-    registerWithPasskey,
-    loginWithPasskey,
-    registerFallback,
-    loginFallback,
+    register,
+    login,
     checkSession,
     logout
   };

@@ -2,6 +2,7 @@
   {
     "username": "alice_mvatx2hy",
     "displayName": "Alice In Wonderland",
+    "passwordHash": null,
     "ecdhPublicKey": {
       "key_ops": [],
       "ext": true,
@@ -29,6 +30,7 @@
   {
     "username": "bob_mvatx2hy",
     "displayName": "Bob The Builder",
+    "passwordHash": null,
     "ecdhPublicKey": {
       "key_ops": [],
       "ext": true,
@@ -56,6 +58,7 @@
   {
     "username": "sam patel",
     "displayName": "Samarth",
+    "passwordHash": null,
     "ecdhPublicKey": {
       "crv": "P-256",
       "ext": true,
@@ -89,5 +92,229 @@
     "pinHash": null,
     "createdAt": "2026-10-16T10:35:35.406Z",
     "lastSeen": "2026-10-16T10:35:35.406Z"
+  },
+  {
+    "username": "user1_mvb5qnvx",
+    "displayName": "Test User One",
+    "passwordHash": "404edbd8ed70b6d675b94b4f92d53a51:b13b9569e339672a41f5ad761741b0ac152da275bad9250e3582bdd894ca9ece2b5159f498bf5ffe66b6d2f5c2da1049f93c740f996690fb5a7735e6e593f7e0",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "vELngroESSUlKUVsFm9Hw2aRSUZPiJXCZdxNxgPCFpU",
+      "y": "8m3EcOMu4v_U2adlzG5jLGanBdX6nDGuocIS8MCjyKY",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "rM-y1HvCTIT18blTOgQYzsewBRuukDRodKnOwr7iGS0",
+      "y": "8fOogLqhazKmRzCuBeLmjonsEhrSb3pOjGBdtx6Bf-M",
+      "crv": "P-256"
+    },
+    "fingerprint": "b647e8933d116cebb628d51394b2a437",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:03:52.777Z",
+    "lastSeen": "2026-10-16T16:03:52.777Z"
+  },
+  {
+    "username": "user2_mvb5qnvx",
+    "displayName": "Test User Two",
+    "passwordHash": "b93d9b3be5683bf45cc40819a44c10c1:26a018d1b4086427095809fe8821773d86bec216c49f5a625d87785a2ec67e725687357e31a75c6af8ac67a4c8324484cecf00e857a0e78df77c9687a724cae5",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "pQlGM5Y1SCyEYHyO-p2E4EiOJOLrbhUOt6JwQPer9kM",
+      "y": "ysHNBNbbmclRbTS0FC9YXiiTXWuQsoXIG6IllcKQls8",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "YXJgVoRBrVOf_VfNWQm3sWpit6dIQqoLIbdTvMOOPd4",
+      "y": "Gf-Zm0FW7Ov1TkaBIkHotbtaibsQ-oNqgjMLClGzjD8",
+      "crv": "P-256"
+    },
+    "fingerprint": "ca8a5e0eb01776d48eae5f4b92b2a6fb",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:03:52.838Z",
+    "lastSeen": "2026-10-16T16:03:52.838Z"
+  },
+  {
+    "username": "user1_mvb5s0l0",
+    "displayName": "Test User One",
+    "passwordHash": "4df09ec5d6b179baecceb2506f4d5a03:513802d455ad3dd7c5237974f18ccf89d103331a32acdf3ee690a6c18cd3432d9ed4ec30d938d7d6ba54223771bce421aadd5d7e5edddf8e8982d614f2366a6b",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "Scyi3kqngF4XsBH10Fxk8Ib1cCv4D40FVK7A98Ei06M",
+      "y": "74xTtQK9JzqD2F1nicGYXIT3oGLjTKCS6Ix7tDM2EVM",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "nRWFLYqkjePXqQQAazALhyPb2_vrVtHIuvUzYBcSNYw",
+      "y": "wK41dwkiF8rBBg367SArVxMw9mZXMH5OOQUuaumcazY",
+      "crv": "P-256"
+    },
+    "fingerprint": "bd06e66d863a4f5daf4a15b7a1d05970",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:04:55.832Z",
+    "lastSeen": "2026-10-16T16:04:55.832Z"
+  },
+  {
+    "username": "user2_mvb5s0l0",
+    "displayName": "Test User Two",
+    "passwordHash": "4d77b151941fc350c68a6a489dd1ca4f:6eef563a44e25dd3e3ffd6649d8e556975a3644dacb08d9e080590afe2d21151b4604a84db71b0ce4913cc69e49c03a4303d5031e8bea8cbaf7e6f9cae06e76a",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "onGEw3Q0UgQMnrEPVoIdG2XmbExMvYlBKGFiIfjdF8U",
+      "y": "TuiAmZLhB3HopXhASpVVFneqOSsNti2Vq2trDMBwras",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "aBmZaLQAK1f3ctwS0HwwCGW0o_-b6gtGi8rlysEP110",
+      "y": "Kp9mW1674Bvzq7InjWgEY9KgFLpLzJfUxGSjSfCzK2w",
+      "crv": "P-256"
+    },
+    "fingerprint": "0d41064ec5932a739599324cc43dda93",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:04:55.891Z",
+    "lastSeen": "2026-10-16T16:04:55.891Z"
+  },
+  {
+    "username": "alice_mvb5u5pc",
+    "displayName": "Alice In Wonderland",
+    "passwordHash": "7733cf4f7f47040d0fbf46230356c87c:0fa3c1968a88e39970f8296bf64f5ff8e235de7c71115020c81398fcc4e58bc08b225743921b7e82a485bd55aed52edd83b97e6679f04e7151f959ae414b1d0e",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "bbhaXhwv9aJ6k2IW8mNIekHjmxRD0kmA8HwZXavjfNg",
+      "y": "RMb1jTxbaFDsITpQ9ArFUGit5GIjUnZcPwgmJZ_JOl0",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "8Yi9nCVdCq55DOffQBILcQ_fUj22SDFUCTKFgo-8ClQ",
+      "y": "avszbPqE3S81XTpaPT8ybiKrDm6POvc4BtF8CAkaBE4",
+      "crv": "P-256"
+    },
+    "fingerprint": "77d1bbef54fdcf96f8772abfb30b5276",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:06:35.743Z",
+    "lastSeen": "2026-10-16T16:06:36.753Z"
+  },
+  {
+    "username": "bob_mvb5u5pc",
+    "displayName": "Bob The Builder",
+    "passwordHash": "91a30bc3860cc1c41f3bc10ab7c35300:64f181c42b37bc63f50f70c90ddea2761d96af9c263ee075566be983c92082c99d48a54e736998463324be6657fcee0522985b6d53391e4a17b42bed91e7eea2",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "rmWgzBVkLGe8NZBoQaGIMSIqgcMAdMvugk-agKWPIAU",
+      "y": "Jn3zOTvEQ8tqTydoJDHPjfIPATa9EAEkXJ3wVnzHZkQ",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "qzBGC1BzqO47EHxlahDlLBOLaZZ28FklCmJDytwQUpU",
+      "y": "t9qlLh51vmZyne-lzqW0aV01pXPuHLAdu6fMx1Uz3N4",
+      "crv": "P-256"
+    },
+    "fingerprint": "567a36b268c4ea7b7732f6eb9a2f7c17",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:06:35.809Z",
+    "lastSeen": "2026-10-16T16:06:36.752Z"
+  },
+  {
+    "username": "user1_mvb5u6nx",
+    "displayName": "Test User One",
+    "passwordHash": "f930e6ad9f825b9d5800a4dc347211f1:90fc7af9f986e62d7671706be32c6925ffcbe41f5d101a49317daf05ab45d22e9f9fc0b3819f7d7e5380c64bdb433f6aac102b88d5b1472ea0ef165881251d91",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "x1uY2XSzWufgy7TEzHaC30e2Jy2BtuveZLPU-XX-p7M",
+      "y": "0MVC8_3o76WZJTiEzvlDEdABad86kx2R1T-nDryapWo",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "ih6VGIzNQ0wlFiKDYt8Pi2HVAXbJWYAnK8u7bI8wtsA",
+      "y": "L-tMSCoHxlxDKSYcCd_a0mxFbg4jDeg9vd9U7_CQ35A",
+      "crv": "P-256"
+    },
+    "fingerprint": "8811c072dbb9f9f7103ada1c21cbe86c",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:06:36.988Z",
+    "lastSeen": "2026-10-16T16:06:36.988Z"
+  },
+  {
+    "username": "user2_mvb5u6nx",
+    "displayName": "Test User Two",
+    "passwordHash": "9ca5ba34ca6a37726ee2a73ce92cf7f9:78eb4624631fcda728e589efb1b33ab9119206f9a69a4c729aedb87f4c3280bd072515cfa69ec091a2b37d280c42ebf80c924f5b242b5ba25d3057f4641315d8",
+    "ecdhPublicKey": {
+      "key_ops": [],
+      "ext": true,
+      "kty": "EC",
+      "x": "lhVtY2J3IIk0MdpwLwQ8WnVYb0lhBj-MnWCTliC-BbQ",
+      "y": "yjPl64KyLhidhzfE_GBD-YfzFjltDAahnFd7x-PLrBg",
+      "crv": "P-256"
+    },
+    "ecdsaPublicKey": {
+      "key_ops": [
+        "verify"
+      ],
+      "ext": true,
+      "kty": "EC",
+      "x": "MlrjJACf8IKS2t0P4gnF9ljdp3TDsWkAXcQJB1pYwC8",
+      "y": "tWGqcB-QIEzq0UcFY-AyEttiSpG3-9mSDdQW51WWn1U",
+      "crv": "P-256"
+    },
+    "fingerprint": "f9194829645572848c2ab91268550e7c",
+    "passkeyCredentials": [],
+    "pinHash": null,
+    "createdAt": "2026-10-16T16:06:37.047Z",
+    "lastSeen": "2026-10-16T16:06:37.047Z"
   }
 ]

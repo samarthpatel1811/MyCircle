@@ -2,9 +2,9 @@
 <html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>MyCircle — Private Messaging</title>
-  <meta name="description" content="Your circle. Your conversations. Modern end-to-end encrypted messaging with zero server chat database.">
+  <meta name="description" content="Your circle. Your conversations. Secure, modern, end-to-end encrypted private messaging.">
   <meta name="theme-color" content="#1B4332">
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png">
@@ -16,7 +16,7 @@
   <div id="app">
 
     <!-- ====================================================================
-         1. Authentication / Welcome Screen
+         1. Authentication / Welcome Screen (Login & Registration)
          ==================================================================== -->
     <div id="auth-view" class="auth-overlay">
       <div class="auth-card">
@@ -33,78 +33,99 @@
           </div>
         </div>
 
-        <div class="auth-tabs">
-          <button type="button" id="tab-login" class="auth-tab active">Sign In</button>
-          <button type="button" id="tab-signup" class="auth-tab">Create Account</button>
+        <div id="auth-error" class="auth-error-banner"></div>
+        <div id="auth-success" class="auth-success-banner"></div>
+
+        <!-- Log In View -->
+        <div id="view-login" style="width: 100%;">
+          <form id="form-login" class="auth-form">
+            <div class="form-group">
+              <label class="form-label" for="login-username">Username</label>
+              <input type="text" id="login-username" class="form-input" placeholder="e.g. alice" autocomplete="username" autocapitalize="none" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="login-password">Password</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="login-password" class="form-input" placeholder="Enter your password" autocomplete="current-password" required>
+                <button type="button" class="password-toggle-btn" data-target="login-password" title="Show or hide password" aria-label="Show password">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" id="btn-login-submit" class="btn-primary" style="margin-top: 0.5rem;">
+              <span>Log In</span>
+            </button>
+
+            <div class="auth-switch-text">
+              Don't have an account? <span id="link-goto-signup" class="auth-switch-link">Create an account</span>
+            </div>
+          </form>
         </div>
 
-        <div id="auth-error" class="auth-error-banner"></div>
-
-        <!-- Sign In Form -->
-        <form id="form-login" class="auth-form">
-          <div class="form-group">
-            <label class="form-label" for="login-username">Username</label>
-            <input type="text" id="login-username" class="form-input" placeholder="e.g. alice" autocomplete="username" required>
-          </div>
-
-          <button type="submit" id="btn-login-passkey" class="btn-primary">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 0 0 8 11a4 4 0 1 1 8 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0 0 15.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 0 0 4 11m0 0a8 8 0 0 0 .528 2.86"></path>
-            </svg>
-            Sign In with Passkey
-          </button>
-
-          <div class="auth-fallback-toggle" id="toggle-login-pin">Or use Device Security PIN</div>
-
-          <div class="auth-fallback-panel" id="login-pin-panel">
+        <!-- Registration View -->
+        <div id="view-signup" style="width: 100%; display: none;">
+          <form id="form-signup" class="auth-form">
             <div class="form-group">
-              <label class="form-label" for="login-pin">Device PIN (4+ digits)</label>
-              <input type="password" id="login-pin" class="form-input" placeholder="••••" maxlength="12">
+              <label class="form-label" for="signup-fullname">Full Name</label>
+              <input type="text" id="signup-fullname" class="form-input" placeholder="e.g. Alice Smith" autocomplete="name" required>
             </div>
-            <button type="button" id="btn-login-pin" class="btn-secondary">Sign In with PIN</button>
-            <p class="auth-fallback-note">Use this fallback on devices or browsers where WebAuthn hardware passkeys are unavailable.</p>
-          </div>
-        </form>
 
-        <!-- Create Account Form -->
-        <form id="form-signup" class="auth-form" style="display: none;">
-          <div class="form-group">
-            <label class="form-label" for="signup-username">Choose a Username</label>
-            <input type="text" id="signup-username" class="form-input" placeholder="e.g. bob" autocomplete="username" required pattern="[a-zA-Z0-9_-]{3,24}" title="3-24 characters, letters, numbers, hyphens, underscores">
-          </div>
-
-          <div class="form-group">
-            <label class="form-label" for="signup-displayname">Display Name</label>
-            <input type="text" id="signup-displayname" class="form-input" placeholder="e.g. Bob Jones">
-          </div>
-
-          <button type="submit" id="btn-signup-passkey" class="btn-primary">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 0 0 8 11a4 4 0 1 1 8 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0 0 15.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 0 0 4 11m0 0a8 8 0 0 0 .528 2.86"></path>
-            </svg>
-            Create Account with Passkey
-          </button>
-
-          <div class="auth-fallback-toggle" id="toggle-signup-pin">Or setup with Device Security PIN</div>
-
-          <div class="auth-fallback-panel" id="signup-pin-panel">
             <div class="form-group">
-              <label class="form-label" for="signup-pin">Set a Device PIN (4+ digits)</label>
-              <input type="password" id="signup-pin" class="form-input" placeholder="••••" maxlength="12">
+              <label class="form-label" for="signup-username">Unique Username</label>
+              <input type="text" id="signup-username" class="form-input" placeholder="e.g. alice" autocomplete="username" autocapitalize="none" required pattern="[a-zA-Z0-9_-]{3,24}" title="3-24 characters, letters, numbers, hyphens, underscores">
+              <span style="font-size: 0.74rem; color: var(--text-muted);">Letters, numbers, underscores or hyphens (3-24 chars).</span>
             </div>
-            <button type="button" id="btn-signup-pin" class="btn-secondary">Register with PIN</button>
-            <p class="auth-fallback-note">A cryptographic P-256 identity keypair will be generated locally in your browser storage.</p>
-          </div>
-        </form>
+
+            <div class="form-group">
+              <label class="form-label" for="signup-password">Password</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="signup-password" class="form-input" placeholder="At least 6 characters" autocomplete="new-password" required minlength="6">
+                <button type="button" class="password-toggle-btn" data-target="signup-password" title="Show or hide password" aria-label="Show password">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="signup-confirmpassword">Confirm Password</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="signup-confirmpassword" class="form-input" placeholder="Re-enter your password" autocomplete="new-password" required minlength="6">
+                <button type="button" class="password-toggle-btn" data-target="signup-confirmpassword" title="Show or hide password" aria-label="Show password">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" id="btn-signup-submit" class="btn-primary" style="margin-top: 0.5rem;">
+              <span>Create Account</span>
+            </button>
+
+            <div class="auth-switch-text">
+              Already have an account? <span id="link-goto-login" class="auth-switch-link">Log In</span>
+            </div>
+          </form>
+        </div>
+
       </div>
     </div>
 
     <!-- ====================================================================
-         2. Main Application Layout (Responsive 2-Pane)
+         2. Main Application Layout (Responsive Split / Full Mobile)
          ==================================================================== -->
     <div id="main-view" class="app-layout" style="display: none;">
 
-      <!-- Left Sidebar: Conversations & Contacts -->
+      <!-- Left Sidebar: Conversations & Navigation -->
       <aside class="sidebar">
         <!-- Sidebar Header -->
         <header class="sidebar-header">
@@ -114,17 +135,19 @@
           </div>
 
           <div class="header-actions">
-            <!-- New Chat / Search User -->
-            <button type="button" id="btn-open-search" class="icon-btn" title="New Private Chat" aria-label="New Private Chat">
+            <!-- Connect with People Button -->
+            <button type="button" id="btn-open-connect" class="icon-btn" title="Connect with People (QR & Join Key)" aria-label="Connect with People">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                <line x1="12" y1="8" x2="12" y2="14"></line>
-                <line x1="9" y1="11" x2="15" y2="11"></line>
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
               </svg>
+              <span id="requests-badge" class="nav-badge">0</span>
             </button>
 
-            <!-- New Group -->
-            <button type="button" id="btn-open-new-group" class="icon-btn" title="Create Group" aria-label="Create Group">
+            <!-- New Group Button -->
+            <button type="button" id="btn-open-new-group" class="icon-btn" title="Create New Group" aria-label="Create New Group">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                 <circle cx="9" cy="7" r="4"></circle>
@@ -133,17 +156,7 @@
               </svg>
             </button>
 
-            <!-- Invite Friends & QR Code -->
-            <button type="button" id="btn-open-invite" class="icon-btn" title="Invite Friends / QR Code" aria-label="Invite Friends / QR Code">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
-              </svg>
-            </button>
-
-            <!-- Settings -->
+            <!-- Settings Button -->
             <button type="button" id="btn-open-settings" class="icon-btn" title="Settings & Privacy" aria-label="Settings & Privacy">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="3"></circle>
@@ -160,7 +173,7 @@
             <span id="my-display-name" class="current-username">You</span>
             <span id="my-handle" style="color: var(--text-muted); font-size: 0.78rem;">@username</span>
           </div>
-          <span id="network-pill" style="font-size: 0.72rem; color: var(--text-muted);">Connecting...</span>
+          <span id="network-pill" style="font-size: 0.72rem; color: var(--text-muted);">Connected</span>
         </div>
 
         <!-- Filter / Search conversations -->
@@ -185,8 +198,10 @@
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
           <div class="empty-conv-title">No conversations yet</div>
-          <p class="empty-conv-sub">Connect with friends to start your first secure, end-to-end encrypted circle.</p>
-          <button type="button" id="btn-empty-start-chat" class="btn-secondary" style="margin-top: 0.5rem; font-size: 0.84rem;">Find Friends</button>
+          <p class="empty-conv-sub">Connect with someone to start chatting privately.</p>
+          <button type="button" id="btn-empty-connect" class="btn-primary" style="margin-top: 0.5rem; font-size: 0.88rem; width: auto; padding: 0.55rem 1.1rem;">
+            Connect with People
+          </button>
         </div>
       </aside>
 
@@ -199,27 +214,27 @@
           <h2 class="chat-empty-title">MyCircle</h2>
           <p class="chat-empty-desc">
             Your circle. Your conversations.<br>
-            All messages are encrypted on your device and can only be decrypted by the intended recipient.
+            All messages are end-to-end encrypted on your device and can only be read by authorized recipients.
           </p>
-          <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
-            <button type="button" id="btn-empty-invite" class="btn-primary" style="width: auto; padding: 0.75rem 1.4rem;">
+          <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem; flex-wrap: wrap; justify-content: center;">
+            <button type="button" id="btn-empty-open-connect" class="btn-primary" style="width: auto; padding: 0.7rem 1.3rem;">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="7" height="7"></rect>
-                <rect x="14" y="3" width="7" height="7"></rect>
-                <rect x="14" y="14" width="7" height="7"></rect>
-                <rect x="3" y="14" width="7" height="7"></rect>
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
               </svg>
-              Share My Invite QR
+              Connect with People
             </button>
-            <button type="button" id="btn-empty-search-top" class="btn-secondary" style="width: auto; padding: 0.75rem 1.4rem;">
-              Find User
+            <button type="button" id="btn-empty-open-group" class="btn-secondary" style="width: auto; padding: 0.7rem 1.3rem;">
+              Create Circle Group
             </button>
           </div>
         </div>
 
         <!-- Active Conversation View -->
         <div id="chat-active" class="chat-active-view">
-          <!-- Chat Header -->
+          <!-- Chat Header (Clickable for Group/Peer Info) -->
           <header class="chat-header">
             <div class="chat-header-left">
               <button type="button" id="btn-mobile-back" class="mobile-back-btn" title="Back to chats" aria-label="Back to chats">
@@ -228,13 +243,21 @@
                 </svg>
               </button>
 
-              <div id="active-chat-avatar" class="avatar">B</div>
+              <!-- Clickable Header Area for Group & Peer Info -->
+              <div id="chat-header-clickable" class="chat-header-clickable" title="Click for details">
+                <div id="active-chat-avatar" class="avatar">B</div>
 
-              <div class="chat-peer-info">
-                <div id="active-chat-name" class="chat-peer-name">Bob</div>
-                <div id="active-chat-sub" class="chat-peer-sub">
-                  <span id="active-status-dot" class="status-dot"></span>
-                  <span id="active-status-text">End-to-End Encrypted</span>
+                <div class="chat-peer-info">
+                  <div id="active-chat-name" class="chat-peer-name">
+                    <span>Chat Name</span>
+                    <svg id="header-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6;">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </div>
+                  <div id="active-chat-sub" class="chat-peer-sub">
+                    <span id="active-status-dot" class="status-dot"></span>
+                    <span id="active-status-text">End-to-End Encrypted</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -247,24 +270,25 @@
                 </svg>
               </button>
 
-              <!-- Group Info / Manage Members Button (Visible on groups) -->
-              <button type="button" id="btn-group-manage" class="icon-btn" title="Group Members & Rekeying" style="display: none;" aria-label="Group Members">
+              <!-- Group Members Button -->
+              <button type="button" id="btn-group-manage" class="icon-btn" title="Group Details & Members" style="display: none;" aria-label="Group Details">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="1"></circle>
-                  <circle cx="12" cy="5" r="1"></circle>
-                  <circle cx="12" cy="19" r="1"></circle>
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
                 </svg>
               </button>
             </div>
           </header>
 
-          <!-- Security Banner -->
+          <!-- Security Banner (Compact) -->
           <div class="chat-e2ee-banner">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
               <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
             </svg>
-            <span>Messages are secured with P-256 ECDH & AES-256-GCM. Stored only on your device.</span>
+            <span>End-to-End Encrypted (P-256 ECDH + AES-256-GCM)</span>
           </div>
 
           <!-- Messages Scroll View -->
@@ -280,7 +304,7 @@
             <span id="typing-text" style="font-size: 0.75rem; color: var(--text-muted); margin-left: 0.3rem;">typing...</span>
           </div>
 
-          <!-- Input Bar -->
+          <!-- Chat Input Bar -->
           <footer class="chat-input-bar">
             <div class="chat-input-wrapper">
               <input type="text" id="message-input" class="chat-input" placeholder="Type an encrypted message..." autocomplete="off">
@@ -301,24 +325,201 @@
          3. Modals & Dialogs
          ==================================================================== -->
 
-    <!-- Modal: Search Users / Start New Chat -->
-    <div id="modal-search" class="modal-backdrop">
+    <!-- Modal: Connect with People (QR Code & Join Key System) -->
+    <div id="modal-connect" class="modal-backdrop">
       <div class="modal-container">
         <header class="modal-header">
-          <h2 class="modal-title">Start a Secure Conversation</h2>
-          <button type="button" class="icon-btn modal-close-btn" data-close="modal-search">✕</button>
+          <h2 class="modal-title">Connect with People</h2>
+          <button type="button" class="icon-btn modal-close-btn" data-close="modal-connect">✕</button>
         </header>
+
+        <div class="connect-tabs">
+          <button type="button" id="tab-connect-share" class="connect-tab active">My Join Code & QR</button>
+          <button type="button" id="tab-connect-join" class="connect-tab">Enter Join Key</button>
+          <button type="button" id="tab-connect-requests" class="connect-tab">
+            Requests <span id="requests-tab-badge" style="background: var(--color-danger); color: #fff; font-size: 0.65rem; padding: 1px 6px; border-radius: 9999px; margin-left: 4px; display: none;">0</span>
+          </button>
+        </div>
+
         <div class="modal-body">
-          <div class="search-input-wrapper">
-            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input type="text" id="user-search-field" class="search-input" placeholder="Search by @username or name...">
+          <!-- Subview 1: My Join Code & QR -->
+          <div id="connect-view-share" style="display: flex; flex-direction: column; gap: 1rem; text-align: center;">
+            <p style="font-size: 0.88rem; color: var(--text-secondary);">
+              Share your join key or show this QR code to connect securely with your circle.
+            </p>
+
+            <div class="qr-card">
+              <canvas id="invite-qr-canvas"></canvas>
+              <span id="invite-qr-user-label" style="font-size: 0.8rem; font-weight: 600; color: var(--brand-primary); margin-top: 0.4rem;">@username</span>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+              <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Your Join Key</span>
+              <div style="display: flex; gap: 0.5rem; align-items: center; justify-content: center;">
+                <span id="my-join-key-text" class="join-code-badge">MYC-....-....</span>
+                <button type="button" id="btn-copy-join-key" class="btn-secondary" style="width: auto; padding: 0.65rem 1rem;">
+                  Copy Key
+                </button>
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; justify-content: center;">
+              <button type="button" id="btn-share-native-link" class="btn-primary" style="width: auto; padding: 0.6rem 1.2rem;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="18" cy="5" r="3"></circle>
+                  <circle cx="6" cy="12" r="3"></circle>
+                  <circle cx="18" cy="19" r="3"></circle>
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                </svg>
+                Share Link
+              </button>
+              <button type="button" id="btn-refresh-join-key" class="btn-secondary" style="width: auto; padding: 0.6rem 1rem;" title="Revoke and generate a new key">
+                Generate New
+              </button>
+            </div>
           </div>
 
-          <div id="search-results-list" style="display: flex; flex-direction: column; gap: 0.5rem; max-height: 280px; overflow-y: auto;">
-            <!-- User search items -->
+          <!-- Subview 2: Enter Join Key -->
+          <div id="connect-view-join" style="display: none; flex-direction: column; gap: 1rem;">
+            <p style="font-size: 0.88rem; color: var(--text-secondary);">
+              Enter a join key received from a friend to start a private encrypted conversation.
+            </p>
+
+            <div class="form-group">
+              <label class="form-label" for="input-enter-join-key">Join Key</label>
+              <div style="display: flex; gap: 0.5rem;">
+                <input type="text" id="input-enter-join-key" class="form-input" placeholder="e.g. MYC-7K9P-4X2M" autocapitalize="characters" style="font-family: var(--font-mono); font-weight: 600; letter-spacing: 0.05em;">
+                <button type="button" id="btn-verify-join-key" class="btn-primary" style="width: auto; white-space: nowrap; padding: 0.75rem 1.1rem;">
+                  Look Up
+                </button>
+              </div>
+            </div>
+
+            <!-- Key Preview Card -->
+            <div id="join-key-preview" style="display: none; padding: 0.85rem; background: var(--bg-base); border: 1px solid var(--border-focus); border-radius: var(--radius-md);">
+              <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;">
+                <div id="join-preview-avatar" class="avatar" style="width: 40px; height: 40px;">?</div>
+                <div>
+                  <div id="join-preview-name" style="font-weight: 700; color: var(--text-main);">Full Name</div>
+                  <div id="join-preview-handle" style="font-size: 0.78rem; color: var(--text-muted);">@username</div>
+                </div>
+              </div>
+
+              <div id="join-preview-status" style="font-size: 0.8rem; color: var(--brand-secondary); margin-bottom: 0.75rem;">
+                Key verified. Ready to connect.
+              </div>
+
+              <button type="button" id="btn-send-join-request" class="btn-primary">
+                Send Chat Request
+              </button>
+            </div>
+          </div>
+
+          <!-- Subview 3: Pending Requests -->
+          <div id="connect-view-requests" style="display: none; flex-direction: column; gap: 1rem;">
+            <div>
+              <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.5rem; text-transform: uppercase;">Incoming Requests</h4>
+              <div id="incoming-requests-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <p style="font-size: 0.82rem; color: var(--text-muted);">No incoming requests.</p>
+              </div>
+            </div>
+
+            <div>
+              <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.5rem; text-transform: uppercase;">Outgoing Requests</h4>
+              <div id="outgoing-requests-list" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                <p style="font-size: 0.82rem; color: var(--text-muted);">No outgoing requests.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Group Information & Members Panel -->
+    <div id="modal-group-info" class="modal-backdrop">
+      <div class="modal-container">
+        <header class="modal-header">
+          <div style="display: flex; align-items: center; gap: 0.65rem;">
+            <div id="group-info-avatar" class="avatar group" style="width: 38px; height: 38px; font-size: 0.95rem;">G</div>
+            <div>
+              <h2 class="modal-title" id="group-info-name">Group Name</h2>
+              <span id="group-info-member-count" style="font-size: 0.75rem; color: var(--text-muted);">0 members</span>
+            </div>
+          </div>
+          <button type="button" class="icon-btn modal-close-btn" data-close="modal-group-info">✕</button>
+        </header>
+
+        <div class="modal-body">
+          <!-- Forward Secrecy Security Card -->
+          <div style="background: var(--brand-tint); border: 1px solid var(--border-accent); padding: 0.65rem 0.85rem; border-radius: var(--radius-md); font-size: 0.78rem; color: var(--brand-secondary); display: flex; align-items: center; gap: 0.5rem;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <div>
+              <strong>Forward Secrecy Active:</strong> Removing a member immediately rotates the group encryption key. Removed members cannot read future messages.
+            </div>
+          </div>
+
+          <!-- Members List -->
+          <div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+              <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Circle Members</h4>
+              <span style="font-size: 0.75rem; color: var(--text-muted);">Click member for private chat</span>
+            </div>
+            <div id="group-members-list" style="display: flex; flex-direction: column; gap: 0.45rem;">
+              <!-- Real members populated by app.js -->
+            </div>
+          </div>
+
+          <!-- Add Member Section (Admin only) -->
+          <div id="group-add-member-section" style="margin-top: 0.5rem;">
+            <h4 style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.4rem; text-transform: uppercase;">Add Member</h4>
+            <div style="display: flex; gap: 0.5rem;">
+              <input type="text" id="add-member-username" class="form-input" placeholder="Enter username...">
+              <button type="button" id="btn-add-member-submit" class="btn-primary" style="width: auto; white-space: nowrap; padding: 0.75rem 1.1rem;">
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <footer class="modal-footer" style="justify-content: space-between;">
+          <button type="button" id="btn-leave-group" class="btn-secondary" style="width: auto; color: var(--color-danger); border-color: rgba(192, 57, 43, 0.3);">
+            Leave Circle
+          </button>
+          <button type="button" class="btn-primary modal-close-btn" data-close="modal-group-info" style="width: auto; padding: 0.6rem 1.2rem;">
+            Done
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Modal: Member Details (Click from Group Info) -->
+    <div id="modal-member-details" class="modal-backdrop">
+      <div class="modal-container" style="max-width: 400px;">
+        <header class="modal-header">
+          <h2 class="modal-title">Member Profile</h2>
+          <button type="button" class="icon-btn modal-close-btn" data-close="modal-member-details">✕</button>
+        </header>
+
+        <div class="modal-body" style="text-align: center; align-items: center;">
+          <div id="member-detail-avatar" class="avatar" style="width: 72px; height: 72px; font-size: 1.8rem; margin: 0 auto 0.5rem auto;">?</div>
+          <h3 id="member-detail-name" style="font-size: 1.15rem; font-weight: 700; color: var(--text-main);">Display Name</h3>
+          <span id="member-detail-handle" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.75rem;">@username</span>
+
+          <div style="width: 100%; background: var(--bg-base); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.6rem; margin-bottom: 0.5rem; text-align: left;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase;">Public Key Fingerprint</div>
+            <div id="member-detail-fingerprint" style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--brand-secondary); word-break: break-all;">
+              ...
+            </div>
+          </div>
+
+          <div id="member-detail-action-container" style="width: 100%; margin-top: 0.5rem;">
+            <button type="button" id="btn-member-private-chat" class="btn-primary">
+              Request Private Chat
+            </button>
           </div>
         </div>
       </div>
@@ -334,11 +535,11 @@
         <div class="modal-body">
           <div class="form-group">
             <label class="form-label" for="group-name-input">Circle Name</label>
-            <input type="text" id="group-name-input" class="form-input" placeholder="e.g. Core Family, Secret Project">
+            <input type="text" id="group-name-input" class="form-input" placeholder="e.g. Core Family, Secret Project" required>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Select Members</label>
+            <label class="form-label">Select Members from Contacts</label>
             <div id="group-members-picker" style="display: flex; flex-direction: column; gap: 0.4rem; max-height: 200px; overflow-y: auto;">
               <!-- Contacts checkboxes -->
             </div>
@@ -346,83 +547,7 @@
         </div>
         <footer class="modal-footer">
           <button type="button" class="btn-secondary modal-close-btn" data-close="modal-new-group" style="width: auto;">Cancel</button>
-          <button type="button" id="btn-create-group-confirm" class="btn-primary" style="width: auto;">Create Circle</button>
-        </footer>
-      </div>
-    </div>
-
-    <!-- Modal: Group Info & Member Management (Key Rotation) -->
-    <div id="modal-group-info" class="modal-backdrop">
-      <div class="modal-container">
-        <header class="modal-header">
-          <h2 class="modal-title" id="group-info-title">Circle Details</h2>
-          <button type="button" class="icon-btn modal-close-btn" data-close="modal-group-info">✕</button>
-        </header>
-        <div class="modal-body">
-          <div style="background: var(--brand-tint); border: 1px solid var(--border-accent); padding: 0.75rem 0.9rem; border-radius: var(--radius-md); font-size: 0.8rem; color: var(--brand-secondary);">
-            <strong>Forward Secrecy Active:</strong> Removing a member immediately rotates the group encryption key. The removed member will be blocked from reading any future messages.
-          </div>
-
-          <div>
-            <h4 style="font-size: 0.88rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.5rem;">Current Epoch & Key</h4>
-            <div style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-muted);" id="group-epoch-display">Epoch: 1</div>
-          </div>
-
-          <div>
-            <h4 style="font-size: 0.88rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.5rem;">Circle Members</h4>
-            <div id="group-members-list" style="display: flex; flex-direction: column; gap: 0.4rem;">
-              <!-- Members list with remove buttons -->
-            </div>
-          </div>
-
-          <div style="margin-top: 0.5rem;">
-            <h4 style="font-size: 0.88rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.5rem;">Add Member</h4>
-            <div style="display: flex; gap: 0.5rem;">
-              <input type="text" id="add-member-username" class="form-input" placeholder="Username to add...">
-              <button type="button" id="btn-add-member-submit" class="btn-primary" style="width: auto; white-space: nowrap;">Add</button>
-            </div>
-          </div>
-        </div>
-        <footer class="modal-footer">
-          <button type="button" id="btn-leave-group" class="btn-secondary" style="width: auto; color: var(--color-danger);">Leave Circle</button>
-          <button type="button" class="btn-primary modal-close-btn" data-close="modal-group-info" style="width: auto;">Done</button>
-        </footer>
-      </div>
-    </div>
-
-    <!-- Modal: Share Invite & QR Code -->
-    <div id="modal-invite" class="modal-backdrop">
-      <div class="modal-container">
-        <header class="modal-header">
-          <h2 class="modal-title">Invite to MyCircle</h2>
-          <button type="button" class="icon-btn modal-close-btn" data-close="modal-invite">✕</button>
-        </header>
-        <div class="modal-body" style="text-align: center;">
-          <p style="font-size: 0.88rem; color: var(--text-secondary);">
-            Scan this QR code with any camera or share your invite link to establish a verified end-to-end encrypted connection.
-          </p>
-
-          <div class="qr-card">
-            <canvas id="invite-qr-canvas"></canvas>
-            <span style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem;" id="invite-qr-user-label">@alice</span>
-          </div>
-
-          <div class="invite-link-box">
-            <span id="invite-link-text" class="invite-link-text">https://...</span>
-            <button type="button" id="btn-copy-invite" class="btn-secondary" style="width: auto; padding: 0.45rem 0.85rem; font-size: 0.82rem;">Copy</button>
-          </div>
-        </div>
-        <footer class="modal-footer">
-          <button type="button" id="btn-share-native" class="btn-primary" style="width: auto;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="18" cy="5" r="3"></circle>
-              <circle cx="6" cy="12" r="3"></circle>
-              <circle cx="18" cy="19" r="3"></circle>
-              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-            </svg>
-            Share via Device
-          </button>
+          <button type="button" id="btn-create-group-confirm" class="btn-primary" style="width: auto; padding: 0.65rem 1.3rem;">Create Circle</button>
         </footer>
       </div>
     </div>
@@ -474,7 +599,7 @@
                 <div class="settings-item-label" id="settings-username-label">@username</div>
                 <div class="settings-item-sub" id="settings-display-label">Display Name</div>
               </div>
-              <span id="settings-auth-badge" class="auth-e2e-badge" style="margin-top: 0;">Passkey</span>
+              <span id="settings-auth-badge" class="auth-e2e-badge" style="margin-top: 0;">Verified</span>
             </div>
             <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--text-muted); word-break: break-all; padding: 0.4rem 0.6rem; background: var(--bg-base); border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
               Identity Fingerprint: <span id="settings-fingerprint">...</span>
@@ -489,7 +614,7 @@
                 <div class="settings-item-label">Theme Mode</div>
                 <div class="settings-item-sub">Warm Cream (Light) or Forest Midnight (Dark)</div>
               </div>
-              <select id="theme-select" class="form-input" style="width: auto; padding: 0.4rem 0.75rem;">
+              <select id="theme-select" class="form-input" style="width: auto; padding: 0.4rem 0.75rem; font-size: 0.85rem;">
                 <option value="light">Warm Cream (Default)</option>
                 <option value="dark">Forest Midnight</option>
               </select>
@@ -502,10 +627,10 @@
             <details style="background: var(--bg-base); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.75rem; font-size: 0.82rem; line-height: 1.45; color: var(--text-secondary);">
               <summary style="font-weight: 600; cursor: pointer; color: var(--brand-primary); outline: none;">How MyCircle Protects You</summary>
               <div style="margin-top: 0.6rem; display: flex; flex-direction: column; gap: 0.5rem;">
-                <p><strong>1. Real End-to-End Encryption:</strong> Uses standard Web Crypto API (P-256 ECDH + AES-256-GCM). Messages are encrypted on your device before leaving and decrypted only on the recipient's device.</p>
-                <p><strong>2. Zero Central Chat Database:</strong> Chat history is stored locally in your browser's IndexedDB. The server never stores chat history or plaintext.</p>
+                <p><strong>1. Real End-to-End Encryption:</strong> Uses Web Crypto API (P-256 ECDH + AES-256-GCM). Messages are encrypted on your device and decrypted only by the intended recipient.</p>
+                <p><strong>2. Zero Central Chat Database:</strong> Chat history is stored locally in your browser's IndexedDB. The server never stores chat history or plaintext messages.</p>
                 <p><strong>3. Ephemeral Relay:</strong> When a recipient is offline, the already-encrypted ciphertext is held in transient server RAM only until they connect, then immediately purged.</p>
-                <p><strong>4. Passkey Authentication:</strong> WebAuthn Passkeys handle account access securely without sending secrets across the network.</p>
+                <p><strong>4. Forward Secrecy:</strong> When a member is removed from a group, encryption keys immediately rotate so they cannot read future messages.</p>
               </div>
             </details>
           </div>
@@ -525,7 +650,7 @@
         </div>
         <footer class="modal-footer" style="justify-content: space-between;">
           <button type="button" id="btn-logout" class="btn-secondary" style="width: auto; color: var(--color-danger);">Sign Out</button>
-          <button type="button" class="btn-primary modal-close-btn" data-close="modal-settings" style="width: auto;">Done</button>
+          <button type="button" class="btn-primary modal-close-btn" data-close="modal-settings" style="width: auto; padding: 0.6rem 1.2rem;">Done</button>
         </footer>
       </div>
     </div>
@@ -553,7 +678,6 @@
   </div>
 
   <!-- Vendor Scripts -->
-  <script src="/js/vendor/simplewebauthn-browser.min.js"></script>
   <script src="/js/vendor/qrcode.min.js"></script>
 
   <!-- Application Modules -->

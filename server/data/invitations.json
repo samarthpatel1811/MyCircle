@@ -1,0 +1,38 @@
+[
+  {
+    "code": "MYC-D2CX-CMHR",
+    "creatorUsername": "user1_mvb5qnvx",
+    "creatorDisplayName": "Test User One",
+    "type": "direct",
+    "groupId": null,
+    "groupName": null,
+    "createdAt": 1792166632958,
+    "expiresAt": 1792771432958,
+    "isRevoked": false,
+    "useCount": 0
+  },
+  {
+    "code": "MYC-ECJK-JKK3",
+    "creatorUsername": "user1_mvb5s0l0",
+    "creatorDisplayName": "Test User One",
+    "type": "direct",
+    "groupId": null,
+    "groupName": null,
+    "createdAt": 1792166696009,
+    "expiresAt": 1792771496009,
+    "isRevoked": false,
+    "useCount": 0
+  },
+  {
+    "code": "MYC-AX5A-453W",
+    "creatorUsername": "user1_mvb5u6nx",
+    "creatorDisplayName": "Test User One",
+    "type": "direct",
+    "groupId": null,
+    "groupName": null,
+    "createdAt": 1792166797224,
+    "expiresAt": 1792771597224,
+    "isRevoked": false,
+    "useCount": 0
+  }
+]

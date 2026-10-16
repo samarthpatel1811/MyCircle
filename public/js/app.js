@@ -7,38 +7,49 @@
 (function () {
   'use strict';
 
-  // State
+  // Application State
   let currentAccount = null;
   let activeConversation = null;
   let typingTimeout = null;
   let isTyping = false;
+  let activeJoinKey = null;
+  let chatRequests = { incoming: [], outgoing: [] };
+  let selectedMemberForProfile = null;
 
-  // DOM Elements
+  // DOM Elements - Auth
   const authView = document.getElementById('auth-view');
   const mainView = document.getElementById('main-view');
   const authError = document.getElementById('auth-error');
-
-  const tabLogin = document.getElementById('tab-login');
-  const tabSignup = document.getElementById('tab-signup');
+  const authSuccess = document.getElementById('auth-success');
+  const viewLogin = document.getElementById('view-login');
+  const viewSignup = document.getElementById('view-signup');
   const formLogin = document.getElementById('form-login');
   const formSignup = document.getElementById('form-signup');
+  const linkGotoSignup = document.getElementById('link-goto-signup');
+  const linkGotoLogin = document.getElementById('link-goto-login');
+  const btnLoginSubmit = document.getElementById('btn-login-submit');
+  const btnSignupSubmit = document.getElementById('btn-signup-submit');
 
-  const toggleLoginPin = document.getElementById('toggle-login-pin');
-  const loginPinPanel = document.getElementById('login-pin-panel');
-  const toggleSignupPin = document.getElementById('toggle-signup-pin');
-  const signupPinPanel = document.getElementById('signup-pin-panel');
-
+  // DOM Elements - User Bar & Navigation
   const myStatusDot = document.getElementById('my-status-dot');
   const myDisplayName = document.getElementById('my-display-name');
   const myHandle = document.getElementById('my-handle');
   const networkPill = document.getElementById('network-pill');
+  const requestsBadge = document.getElementById('requests-badge');
 
+  // DOM Elements - Conversations & Sidebar
   const convSearchInput = document.getElementById('conv-search-input');
   const conversationsContainer = document.getElementById('conversations-container');
   const sidebarEmpty = document.getElementById('sidebar-empty');
+  const btnEmptyConnect = document.getElementById('btn-empty-connect');
+  const btnOpenConnect = document.getElementById('btn-open-connect');
+  const btnOpenNewGroup = document.getElementById('btn-open-new-group');
+  const btnOpenSettings = document.getElementById('btn-open-settings');
 
+  // DOM Elements - Chat Pane
   const chatUnselected = document.getElementById('chat-unselected');
   const chatActive = document.getElementById('chat-active');
+  const chatHeaderClickable = document.getElementById('chat-header-clickable');
   const activeChatAvatar = document.getElementById('active-chat-avatar');
   const activeChatName = document.getElementById('active-chat-name');
   const activeStatusDot = document.getElementById('active-status-dot');
@@ -47,18 +58,19 @@
   const btnVerifySafety = document.getElementById('btn-verify-safety');
   const btnGroupManage = document.getElementById('btn-group-manage');
 
+  // DOM Elements - Messages & Input
   const messagesScroll = document.getElementById('messages-scroll');
   const typingIndicator = document.getElementById('typing-indicator');
   const typingText = document.getElementById('typing-text');
   const messageInput = document.getElementById('message-input');
   const btnSendMessage = document.getElementById('btn-send-message');
-
   const toastContainer = document.getElementById('toast-container');
 
   // ==========================================================================
-  // Toast Notification Helper
+  // Toast & Formatting Utilities
   // ==========================================================================
-  function showToast(message, duration = 3000) {
+  function showToast(message, duration = 3200) {
+    if (!toastContainer) return;
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.innerHTML = `
@@ -80,7 +92,7 @@
 
   function escapeHTML(str) {
     if (!str) return '';
-    return str.replace(/[&<>'"]/g, tag => ({
+    return String(str).replace(/[&<>'"]/g, tag => ({
       '&': '&amp;',
       '<': '&lt;',
       '>': '&gt;',
@@ -101,6 +113,22 @@
     return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
+  function formatDateDivider(timestamp) {
+    const d = new Date(timestamp);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'Today';
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  // Format group member count with proper singular / plural
+  function formatMemberCount(count) {
+    const n = Math.max(0, count || 0);
+    return `${n} ${n === 1 ? 'member' : 'members'}`;
+  }
+
   // ==========================================================================
   // Confirmation Dialog Helper
   // ==========================================================================
@@ -112,13 +140,16 @@
     openModal('modal-confirm');
   }
 
-  document.getElementById('btn-confirm-yes').addEventListener('click', () => {
-    closeModal('modal-confirm');
-    if (confirmCallback) {
-      confirmCallback();
-      confirmCallback = null;
-    }
-  });
+  const btnConfirmYes = document.getElementById('btn-confirm-yes');
+  if (btnConfirmYes) {
+    btnConfirmYes.addEventListener('click', () => {
+      closeModal('modal-confirm');
+      if (confirmCallback) {
+        confirmCallback();
+        confirmCallback = null;
+      }
+    });
+  }
 
   // ==========================================================================
   // Modal Helpers
@@ -153,127 +184,189 @@
   });
 
   // ==========================================================================
-  // Authentication UI Handlers
+  // Show/Hide Password Toggle Buttons
   // ==========================================================================
-  tabLogin.addEventListener('click', () => {
-    tabLogin.classList.add('active');
-    tabSignup.classList.remove('active');
-    formLogin.style.display = 'flex';
-    formSignup.style.display = 'none';
-    hideAuthError();
+  document.querySelectorAll('.password-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.getAttribute('data-target');
+      const input = document.getElementById(targetId);
+      if (!input) return;
+
+      const isPassword = input.getAttribute('type') === 'password';
+      input.setAttribute('type', isPassword ? 'text' : 'password');
+
+      btn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+      btn.innerHTML = isPassword
+        ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+             <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+             <line x1="1" y1="1" x2="23" y2="23"></line>
+           </svg>`
+        : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+             <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+             <circle cx="12" cy="12" r="3"></circle>
+           </svg>`;
+    });
   });
 
-  tabSignup.addEventListener('click', () => {
-    tabSignup.classList.add('active');
-    tabLogin.classList.remove('active');
-    formSignup.style.display = 'flex';
-    formLogin.style.display = 'none';
-    hideAuthError();
-  });
-
-  toggleLoginPin.addEventListener('click', () => {
-    loginPinPanel.classList.toggle('open');
-  });
-
-  toggleSignupPin.addEventListener('click', () => {
-    signupPinPanel.classList.toggle('open');
-  });
-
+  // ==========================================================================
+  // Authentication UI Handlers (Clean & Reliable)
+  // ==========================================================================
   function showAuthError(msg) {
-    authError.textContent = msg;
-    authError.classList.add('visible');
+    if (authSuccess) {
+      authSuccess.textContent = '';
+      authSuccess.classList.remove('visible');
+    }
+    if (authError) {
+      authError.innerHTML = escapeHTML(msg);
+      authError.classList.add('visible');
+    }
   }
 
-  function hideAuthError() {
-    authError.textContent = '';
-    authError.classList.remove('visible');
+  function showAuthSuccess(msg) {
+    if (authError) {
+      authError.textContent = '';
+      authError.classList.remove('visible');
+    }
+    if (authSuccess) {
+      authSuccess.innerHTML = escapeHTML(msg);
+      authSuccess.classList.add('visible');
+    }
   }
 
-  // Passkey Login
-  formLogin.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    hideAuthError();
-    const username = document.getElementById('login-username').value.trim();
-    const btn = document.getElementById('btn-login-passkey');
-    btn.disabled = true;
-    btn.textContent = 'Verifying Passkey...';
-
-    try {
-      const account = await window.MyCircleAuth.loginWithPasskey(username);
-      onAuthSuccess(account);
-    } catch (err) {
-      showAuthError(err.message);
-      loginPinPanel.classList.add('open');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 0 0 8 11a4 4 0 1 1 8 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0 0 15.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 0 0 4 11m0 0a8 8 0 0 0 .528 2.86"></path>
-        </svg>
-        Sign In with Passkey
-      `;
+  function clearAuthAlerts() {
+    if (authError) {
+      authError.textContent = '';
+      authError.classList.remove('visible');
     }
-  });
-
-  // Fallback PIN Login
-  document.getElementById('btn-login-pin').addEventListener('click', async () => {
-    hideAuthError();
-    const username = document.getElementById('login-username').value.trim();
-    const pin = document.getElementById('login-pin').value.trim();
-    if (!username) return showAuthError('Please enter your username');
-    if (!pin) return showAuthError('Please enter your device PIN');
-
-    try {
-      const account = await window.MyCircleAuth.loginFallback(username, pin);
-      onAuthSuccess(account);
-    } catch (err) {
-      showAuthError(err.message);
+    if (authSuccess) {
+      authSuccess.textContent = '';
+      authSuccess.classList.remove('visible');
     }
-  });
+  }
 
-  // Passkey Signup
-  formSignup.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    hideAuthError();
-    const username = document.getElementById('signup-username').value.trim();
-    const displayName = document.getElementById('signup-displayname').value.trim() || username;
-    const btn = document.getElementById('btn-signup-passkey');
-    btn.disabled = true;
-    btn.textContent = 'Creating Passkey...';
+  // Switch between Login and Signup forms
+  if (linkGotoSignup) {
+    linkGotoSignup.addEventListener('click', () => {
+      viewLogin.style.display = 'none';
+      viewSignup.style.display = 'block';
+      clearAuthAlerts();
+      const input = document.getElementById('signup-fullname');
+      if (input) input.focus();
+    });
+  }
 
-    try {
-      const account = await window.MyCircleAuth.registerWithPasskey(username, displayName);
-      onAuthSuccess(account);
-    } catch (err) {
-      showAuthError(err.message);
-      signupPinPanel.classList.add('open');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 0 0 8 11a4 4 0 1 1 8 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0 0 15.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 0 0 4 11m0 0a8 8 0 0 0 .528 2.86"></path>
-        </svg>
-        Create Account with Passkey
-      `;
-    }
-  });
+  if (linkGotoLogin) {
+    linkGotoLogin.addEventListener('click', () => {
+      viewSignup.style.display = 'none';
+      viewLogin.style.display = 'block';
+      clearAuthAlerts();
+      const input = document.getElementById('login-username');
+      if (input) input.focus();
+    });
+  }
 
-  // Fallback PIN Signup
-  document.getElementById('btn-signup-pin').addEventListener('click', async () => {
-    hideAuthError();
-    const username = document.getElementById('signup-username').value.trim();
-    const displayName = document.getElementById('signup-displayname').value.trim() || username;
-    const pin = document.getElementById('signup-pin').value.trim();
-    if (!username) return showAuthError('Please choose a username');
-    if (!pin || pin.length < 4) return showAuthError('Please enter a PIN with at least 4 digits');
+  // Handle Login Form Submission
+  if (formLogin) {
+    formLogin.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAuthAlerts();
 
-    try {
-      const account = await window.MyCircleAuth.registerFallback(username, displayName, pin);
-      onAuthSuccess(account);
-    } catch (err) {
-      showAuthError(err.message);
-    }
-  });
+      const usernameInput = document.getElementById('login-username');
+      const passwordInput = document.getElementById('login-password');
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value;
+
+      if (!username) {
+        return showAuthError('Please enter your username.');
+      }
+      if (!password) {
+        return showAuthError('Please enter your password.');
+      }
+
+      btnLoginSubmit.disabled = true;
+      const originalText = btnLoginSubmit.innerHTML;
+      btnLoginSubmit.innerHTML = '<span>Logging in...</span>';
+
+      try {
+        const account = await window.MyCircleAuth.login(username, password);
+        onAuthSuccess(account);
+      } catch (err) {
+        // Helpful error handling: if account doesn't exist, show clear action
+        if (err.message && err.message.toLowerCase().includes('not found')) {
+          authError.innerHTML = `
+            <span>Account <strong>@${escapeHTML(username)}</strong> does not exist yet.</span>
+            <div style="margin-top: 0.35rem;">
+              <a href="javascript:void(0)" id="link-error-signup" style="color: inherit; text-decoration: underline; font-weight: 700;">Create an account now</a>
+            </div>
+          `;
+          authError.classList.add('visible');
+          const errLink = document.getElementById('link-error-signup');
+          if (errLink) {
+            errLink.addEventListener('click', () => {
+              viewLogin.style.display = 'none';
+              viewSignup.style.display = 'block';
+              clearAuthAlerts();
+              const signupUser = document.getElementById('signup-username');
+              if (signupUser) signupUser.value = username;
+              const signupName = document.getElementById('signup-fullname');
+              if (signupName) signupName.focus();
+            });
+          }
+        } else {
+          showAuthError(err.message || 'Login failed. Please verify your credentials.');
+        }
+      } finally {
+        btnLoginSubmit.disabled = false;
+        btnLoginSubmit.innerHTML = originalText;
+      }
+    });
+  }
+
+  // Handle Signup Form Submission
+  if (formSignup) {
+    formSignup.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAuthAlerts();
+
+      const fullName = document.getElementById('signup-fullname').value.trim();
+      const username = document.getElementById('signup-username').value.trim();
+      const password = document.getElementById('signup-password').value;
+      const confirmPassword = document.getElementById('signup-confirmpassword').value;
+
+      if (!fullName) {
+        return showAuthError('Please enter your full name.');
+      }
+      if (!username) {
+        return showAuthError('Please enter a username.');
+      }
+      if (!/^[a-zA-Z0-9_-]{3,24}$/.test(username)) {
+        return showAuthError('Username must be 3-24 characters (letters, numbers, hyphens, underscores).');
+      }
+      if (!password || password.length < 6) {
+        return showAuthError('Password must be at least 6 characters long.');
+      }
+      if (password !== confirmPassword) {
+        return showAuthError('Passwords do not match. Please verify both password fields.');
+      }
+
+      btnSignupSubmit.disabled = true;
+      const originalText = btnSignupSubmit.innerHTML;
+      btnSignupSubmit.innerHTML = '<span>Creating Secure Account...</span>';
+
+      try {
+        const account = await window.MyCircleAuth.register(fullName, username, password, confirmPassword);
+        showAuthSuccess('Account created successfully! Welcome to MyCircle.');
+        setTimeout(() => {
+          onAuthSuccess(account);
+        }, 400);
+      } catch (err) {
+        showAuthError(err.message || 'Registration failed. Please choose another username.');
+      } finally {
+        btnSignupSubmit.disabled = false;
+        btnSignupSubmit.innerHTML = originalText;
+      }
+    });
+  }
 
   // ==========================================================================
   // Session / Logged In State Transitions
@@ -291,16 +384,20 @@
     document.getElementById('settings-username-label').textContent = `@${account.username}`;
     document.getElementById('settings-display-label').textContent = account.displayName || account.username;
     document.getElementById('settings-fingerprint').textContent = account.fingerprint || 'Pending key generation';
-    document.getElementById('settings-auth-badge').textContent = account.authMethod === 'passkey' ? 'Passkey Verified' : 'Device PIN';
+    document.getElementById('settings-auth-badge').textContent = 'Password Verified';
 
-    // Connect WebSocket Signaling
+    // Connect WebSocket Signaling with session token
     window.MyCircleSignaling.connect(account.username, account.sessionToken);
 
-    // Load Conversations List
+    // Load Conversations List from IndexedDB
     await loadConversations();
 
-    // Check if URL has invite params
-    checkInviteUrl();
+    // Fetch or Generate Join Key & Load Chat Requests
+    await fetchOrCreateUserJoinKey();
+    await loadChatRequests();
+
+    // Check if URL has join key / invite params
+    checkUrlJoinParams();
 
     showToast(`Welcome back, ${account.displayName || account.username}!`);
   }
@@ -327,12 +424,12 @@
       activeStatusText.textContent = isOnline ? 'Online • End-to-End Encrypted' : 'Offline • Local IndexedDB';
     }
     // Update presence dot in conversation list
-    loadConversations();
+    loadConversations(convSearchInput ? convSearchInput.value : '');
   });
 
-  window.MyCircleSignaling.on('typing', ({ sender, isTyping }) => {
+  window.MyCircleSignaling.on('typing', ({ sender, isTyping: peerTyping }) => {
     if (activeConversation && activeConversation.peerUsername && activeConversation.peerUsername.toLowerCase() === sender.toLowerCase()) {
-      if (isTyping) {
+      if (peerTyping) {
         typingText.textContent = `@${sender} is typing...`;
         typingIndicator.classList.add('visible');
       } else {
@@ -348,7 +445,6 @@
       // Ensure sender contact exists
       let contact = await window.MyCircleStorage.getContact(sender);
       if (!contact) {
-        // Fetch public keys from directory
         const res = await fetch(`/api/auth/users/${sender}`);
         if (res.ok) {
           const data = await res.json();
@@ -471,19 +567,66 @@
   window.MyCircleSignaling.on('group-rekey-received', async (packet) => {
     try {
       await window.MyCircleGroupCrypto.handleGroupRekeyPacket(packet, currentAccount);
-      showToast(`Group encryption key updated to Epoch ${packet.epoch}`);
-      if (activeConversation && activeConversation.groupId === packet.groupId) {
-        document.getElementById('group-epoch-display').textContent = `Epoch: ${packet.epoch}`;
-      }
+      showToast(`Circle security key updated to Epoch ${packet.epoch}`);
     } catch (err) {
       console.error('Error handling group rekey:', err);
     }
   });
 
+  // Real-time Chat Request Notifications
+  window.MyCircleSignaling.on('chat-request-received', async (msg) => {
+    const sender = msg.request.fromDisplayName || msg.request.fromUsername;
+    showToast(`New chat request from ${sender}!`);
+    await loadChatRequests();
+  });
+
+  window.MyCircleSignaling.on('chat-request-updated', async (msg) => {
+    const req = msg.request;
+    if (req.status === 'accepted') {
+      showToast(`@${req.toUsername} accepted your chat request!`);
+      // Create conversation locally
+      const peer = (req.fromUsername === currentAccount.username) ? req.toUsername : req.fromUsername;
+      const convId = `direct:${peer.toLowerCase()}`;
+      let conv = await window.MyCircleStorage.getConversation(convId);
+      if (!conv) {
+        // Fetch peer profile to get displayName
+        let peerName = peer;
+        try {
+          const res = await fetch(`/api/auth/users/${peer}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.user) {
+              peerName = data.user.displayName || peer;
+              await window.MyCircleStorage.saveContact(data.user);
+            }
+          }
+        } catch (e) {
+          console.warn('Could not fetch peer profile:', e);
+        }
+        conv = {
+          id: convId,
+          type: 'direct',
+          name: peerName,
+          peerUsername: peer.toLowerCase(),
+          unreadCount: 0,
+          updatedAt: Date.now()
+        };
+        await window.MyCircleStorage.saveConversation(conv);
+      }
+      await loadConversations();
+    } else if (req.status === 'rejected') {
+      showToast(`Chat request to @${req.toUsername} was declined.`);
+    }
+    await loadChatRequests();
+  });
+
+  window.MyCircleSignaling.on('chat-requests-sync', async () => {
+    await loadChatRequests();
+  });
+
   // Handle Delivery ACK
   window.MyCircleSignaling.on('delivery-ack', async ({ messageId }) => {
     await window.MyCircleStorage.updateMessageStatus(messageId, 'delivered');
-    // Update tick icon in DOM if open
     const tickEl = document.getElementById(`tick-${messageId}`);
     if (tickEl) {
       tickEl.className = 'delivery-tick delivered';
@@ -510,8 +653,8 @@
     const list = await window.MyCircleStorage.getAllConversations();
     conversationsContainer.innerHTML = '';
 
-    const query = filterQuery.toLowerCase().trim();
-    const filtered = list.filter(c => !query || c.name.toLowerCase().includes(query) || (c.peerUsername && c.peerUsername.toLowerCase().includes(query)));
+    const query = (filterQuery || '').toLowerCase().trim();
+    const filtered = list.filter(c => !query || (c.name && c.name.toLowerCase().includes(query)) || (c.peerUsername && c.peerUsername.toLowerCase().includes(query)));
 
     if (filtered.length === 0) {
       sidebarEmpty.style.display = 'flex';
@@ -540,7 +683,7 @@
         lastText = escapeHTML(conv.lastMessage.content);
         lastTime = formatTime(conv.lastMessage.timestamp);
         if (conv.lastMessage.sender === currentAccount.username) {
-          tick = conv.lastMessage.status === 'delivered' ? '<span style="color: #52B788;">✓✓</span> ' : '<span>✓</span> ';
+          tick = conv.lastMessage.status === 'delivered' ? '<span style="color: var(--color-online);">✓✓</span> ' : '<span>✓</span> ';
         }
       }
 
@@ -569,9 +712,11 @@
     });
   }
 
-  convSearchInput.addEventListener('input', (e) => {
-    loadConversations(e.target.value);
-  });
+  if (convSearchInput) {
+    convSearchInput.addEventListener('input', (e) => {
+      loadConversations(e.target.value);
+    });
+  }
 
   // Open Conversation
   async function openConversation(conv) {
@@ -588,16 +733,20 @@
     chatUnselected.style.display = 'none';
     chatActive.classList.add('visible');
 
-    // Header info
+    // Header info setup
     const isGroup = conv.type === 'group';
     const initial = (conv.name || conv.peerUsername || '?').charAt(0).toUpperCase();
     activeChatAvatar.textContent = initial;
     activeChatAvatar.className = `avatar ${isGroup ? 'group' : ''}`;
-    activeChatName.textContent = conv.name;
+    
+    // Set actual conversation title
+    const titleSpan = activeChatName.querySelector('span') || activeChatName;
+    titleSpan.textContent = conv.name || (isGroup ? 'Circle Group' : `@${conv.peerUsername}`);
 
     if (isGroup) {
       activeStatusDot.style.display = 'none';
-      activeStatusText.textContent = `${conv.members.length} members • Epoch ${conv.epoch || 1}`;
+      const count = Array.isArray(conv.members) ? conv.members.length : 1;
+      activeStatusText.textContent = `${formatMemberCount(count)} • End-to-End Encrypted`;
       btnGroupManage.style.display = 'flex';
       btnVerifySafety.style.display = 'none';
     } else {
@@ -618,16 +767,764 @@
     await loadMessages(conv.id);
 
     // Refresh conversation list to highlight active item
-    await loadConversations(convSearchInput.value);
+    await loadConversations(convSearchInput ? convSearchInput.value : '');
 
-    // Focus input
-    messageInput.focus();
+    // Focus input and scroll to bottom
+    setTimeout(() => {
+      scrollToBottom();
+      messageInput.focus();
+    }, 50);
   }
 
   // Mobile Back Button: return to sidebar
-  btnMobileBack.addEventListener('click', () => {
-    document.querySelector('.app-layout').classList.remove('conversation-open');
-  });
+  if (btnMobileBack) {
+    btnMobileBack.addEventListener('click', () => {
+      document.querySelector('.app-layout').classList.remove('conversation-open');
+    });
+  }
+
+  // Clickable Header: Open Group Info when clicking the group title/header
+  if (chatHeaderClickable) {
+    chatHeaderClickable.addEventListener('click', () => {
+      if (activeConversation && activeConversation.type === 'group') {
+        openGroupInfoModal();
+      } else if (activeConversation && activeConversation.type === 'direct') {
+        // Open safety numbers for direct chat
+        btnVerifySafety.click();
+      }
+    });
+  }
+
+  if (btnGroupManage) {
+    btnGroupManage.addEventListener('click', () => {
+      openGroupInfoModal();
+    });
+  }
+
+  // ==========================================================================
+  // Group Info Modal & Clickable Member Details
+  // ==========================================================================
+  async function openGroupInfoModal() {
+    if (!activeConversation || activeConversation.type !== 'group') return;
+    openModal('modal-group-info');
+
+    const groupAvatar = document.getElementById('group-info-avatar');
+    const groupNameEl = document.getElementById('group-info-name');
+    const memberCountEl = document.getElementById('group-info-member-count');
+
+    const groupName = activeConversation.name || 'Circle Group';
+    if (groupNameEl) groupNameEl.textContent = groupName;
+    if (groupAvatar) groupAvatar.textContent = groupName.charAt(0).toUpperCase();
+
+    const members = Array.isArray(activeConversation.members) ? activeConversation.members : [];
+    // Deduplicate members
+    const uniqueMembers = Array.from(new Set(members.map(m => m.toLowerCase())));
+    if (memberCountEl) memberCountEl.textContent = formatMemberCount(uniqueMembers.length);
+
+    await renderGroupMembersList(uniqueMembers);
+  }
+
+  async function renderGroupMembersList(membersList) {
+    const listEl = document.getElementById('group-members-list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    const isAdmin = activeConversation.admin === currentAccount.username;
+
+    for (const memberUsername of membersList) {
+      const isSelf = memberUsername.toLowerCase() === currentAccount.username.toLowerCase();
+
+      // Retrieve contact profile from IndexedDB or API
+      let contact = await window.MyCircleStorage.getContact(memberUsername);
+      if (!contact) {
+        try {
+          const res = await fetch(`/api/auth/users/${encodeURIComponent(memberUsername)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.user) {
+              contact = data.user;
+              await window.MyCircleStorage.saveContact(contact);
+            }
+          }
+        } catch (e) {
+          // Fallback
+        }
+      }
+
+      const displayName = (contact && contact.displayName) || memberUsername;
+      const initial = displayName.charAt(0).toUpperCase();
+
+      const item = document.createElement('div');
+      item.className = 'group-member-item';
+      item.style.cursor = 'pointer';
+      item.innerHTML = `
+        <div class="group-member-avatar avatar" style="width: 36px; height: 36px; font-size: 0.9rem;">${initial}</div>
+        <div class="group-member-info" style="flex: 1;">
+          <div style="font-weight: 600; font-size: 0.88rem; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
+            <span>${escapeHTML(displayName)}</span>
+            ${memberUsername === activeConversation.admin ? '<span class="auth-e2e-badge" style="font-size: 0.65rem; padding: 1px 6px;">Admin</span>' : ''}
+            ${isSelf ? '<span style="font-size: 0.75rem; color: var(--text-muted);">(You)</span>' : ''}
+          </div>
+          <div style="font-size: 0.76rem; color: var(--text-muted);">@${escapeHTML(memberUsername)}</div>
+        </div>
+        ${(isAdmin && !isSelf) ? `
+          <button type="button" class="btn-secondary btn-remove-member" data-member="${escapeHTML(memberUsername)}" style="width: auto; padding: 0.35rem 0.65rem; font-size: 0.75rem; color: var(--color-danger); border-color: rgba(192, 57, 43, 0.3);" title="Remove member and rotate keys">
+            Remove
+          </button>
+        ` : `
+          <span style="font-size: 0.75rem; color: var(--brand-secondary); font-weight: 600;">View Profile ›</span>
+        `}
+      `;
+
+      // Clicking member opens member profile modal
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.btn-remove-member')) return;
+        openMemberDetailsModal({
+          username: memberUsername,
+          displayName,
+          fingerprint: (contact && contact.fingerprint) || 'Public key on server',
+          isSelf
+        });
+      });
+
+      listEl.appendChild(item);
+    }
+
+    // Attach Remove Listeners (Admin only)
+    listEl.querySelectorAll('.btn-remove-member').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const member = btn.getAttribute('data-member');
+        showConfirm(
+          'Remove Member & Rotate Keys',
+          `Are you sure you want to remove @${member}? This will rotate the group encryption key. @${member} will be permanently blocked from decrypting future messages.`,
+          async () => {
+            try {
+              const updatedConv = await window.MyCircleGroupCrypto.rotateGroupKeyOnMemberRemoval(
+                activeConversation.groupId,
+                member,
+                currentAccount
+              );
+              activeConversation = updatedConv;
+              openGroupInfoModal();
+              await loadMessages(activeConversation.id);
+              await loadConversations();
+              showToast(`@${member} removed. Security key rotated to Epoch ${updatedConv.epoch}!`);
+            } catch (err) {
+              showToast(err.message || 'Failed to remove member');
+            }
+          }
+        );
+      });
+    });
+  }
+
+  // Add Member to Group
+  const btnAddMemberSubmit = document.getElementById('btn-add-member-submit');
+  if (btnAddMemberSubmit) {
+    btnAddMemberSubmit.addEventListener('click', async () => {
+      const input = document.getElementById('add-member-username');
+      const member = input.value.trim().toLowerCase();
+      if (!member) return showToast('Please enter a username');
+
+      if (activeConversation.members.map(m => m.toLowerCase()).includes(member)) {
+        return showToast(`@${member} is already in this circle`);
+      }
+
+      try {
+        let contact = await window.MyCircleStorage.getContact(member);
+        if (!contact) {
+          const res = await fetch(`/api/auth/users/${member}`);
+          if (!res.ok) throw new Error(`User @${member} not found`);
+          const data = await res.json();
+          contact = data.user;
+          await window.MyCircleStorage.saveContact(contact);
+        }
+
+        activeConversation.members.push(member);
+        await window.MyCircleStorage.saveConversation(activeConversation);
+
+        // Distribute active epoch key to new member
+        const epoch = activeConversation.epoch || 1;
+        const keyRecord = await window.MyCircleStorage.getGroupKey(activeConversation.groupId, epoch);
+        if (keyRecord) {
+          const localPriv = await window.MyCircleCrypto.importECDHPrivateKey(currentAccount.jwk.ecdhPrivate);
+          const remotePub = await window.MyCircleCrypto.importECDHPublicKey(contact.ecdhPublicKey);
+          const pairwiseKey = await window.MyCircleCrypto.derivePairwiseKey(localPriv, remotePub);
+
+          const encKeyPacket = await window.MyCircleCrypto.encryptGroupKeyForMember(
+            pairwiseKey,
+            keyRecord.rawGroupKey,
+            activeConversation.groupId,
+            epoch
+          );
+
+          window.MyCircleSignaling.sendGroupRekeyDistribution(activeConversation.groupId, epoch, [
+            { recipient: member, encryptedKeyPacket: encKeyPacket }
+          ]);
+        }
+
+        input.value = '';
+        await openGroupInfoModal();
+        showToast(`@${member} added to the circle!`);
+      } catch (err) {
+        showToast(err.message || 'Failed to add member');
+      }
+    });
+  }
+
+  // Leave Group
+  const btnLeaveGroup = document.getElementById('btn-leave-group');
+  if (btnLeaveGroup) {
+    btnLeaveGroup.addEventListener('click', () => {
+      showConfirm('Leave Circle', 'Are you sure you want to leave this circle? You will no longer receive new messages.', async () => {
+        closeModal('modal-group-info');
+        await window.MyCircleStorage.deleteConversation(activeConversation.id);
+        activeConversation = null;
+        chatActive.classList.remove('visible');
+        chatUnselected.style.display = 'flex';
+        document.querySelector('.app-layout').classList.remove('conversation-open');
+        await loadConversations();
+        showToast('You left the circle');
+      });
+    });
+  }
+
+  // ==========================================================================
+  // Member Details Modal (Open Private Chat or Send Request)
+  // ==========================================================================
+  async function openMemberDetailsModal(member) {
+    selectedMemberForProfile = member;
+    openModal('modal-member-details');
+
+    document.getElementById('member-detail-avatar').textContent = member.displayName.charAt(0).toUpperCase();
+    document.getElementById('member-detail-name').textContent = member.displayName;
+    document.getElementById('member-detail-handle').textContent = `@${member.username}`;
+    document.getElementById('member-detail-fingerprint').textContent = member.fingerprint || 'Identity key verified';
+
+    const actionContainer = document.getElementById('member-detail-action-container');
+    actionContainer.innerHTML = '';
+
+    if (member.isSelf) {
+      actionContainer.innerHTML = `
+        <div style="font-size: 0.85rem; color: var(--text-muted); padding: 0.5rem;">
+          This is your profile.
+        </div>
+      `;
+      return;
+    }
+
+    // Check if conversation already exists with this member
+    const convId = `direct:${member.username.toLowerCase()}`;
+    const existingConv = await window.MyCircleStorage.getConversation(convId);
+
+    if (existingConv) {
+      const btnOpen = document.createElement('button');
+      btnOpen.className = 'btn-primary';
+      btnOpen.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.4rem;">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+        Open Private Chat
+      `;
+      btnOpen.addEventListener('click', () => {
+        closeModal('modal-member-details');
+        closeModal('modal-group-info');
+        openConversation(existingConv);
+      });
+      actionContainer.appendChild(btnOpen);
+      return;
+    }
+
+    // Check if there is already an outgoing request pending
+    const hasPending = chatRequests.outgoing.some(r => r.toUsername.toLowerCase() === member.username.toLowerCase() && r.status === 'pending');
+
+    const btnRequest = document.createElement('button');
+    btnRequest.className = 'btn-primary';
+
+    if (hasPending) {
+      btnRequest.disabled = true;
+      btnRequest.innerHTML = '<span>Request Sent (Waiting for response...)</span>';
+    } else {
+      btnRequest.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.4rem;">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="8.5" cy="7" r="4"></circle>
+          <line x1="20" y1="8" x2="20" y2="14"></line>
+          <line x1="23" y1="11" x2="17" y2="11"></line>
+        </svg>
+        Request Private Chat
+      `;
+      btnRequest.addEventListener('click', async () => {
+        btnRequest.disabled = true;
+        btnRequest.innerHTML = '<span>Sending Request...</span>';
+        try {
+          const res = await fetch('/api/auth/chat-requests/send', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${currentAccount.sessionToken}`
+            },
+            body: JSON.stringify({ recipientUsername: member.username })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to send chat request');
+
+          showToast(`Private chat request sent to @${member.username}!`);
+          btnRequest.innerHTML = '<span>Request Sent (Waiting...)</span>';
+          await loadChatRequests();
+        } catch (err) {
+          btnRequest.disabled = false;
+          btnRequest.innerHTML = '<span>Request Private Chat</span>';
+          showToast(err.message || 'Could not send request');
+        }
+      });
+    }
+
+    actionContainer.appendChild(btnRequest);
+  }
+
+  // ==========================================================================
+  // Connect with People (QR Code & Join Key System)
+  // ==========================================================================
+  const tabConnectShare = document.getElementById('tab-connect-share');
+  const tabConnectJoin = document.getElementById('tab-connect-join');
+  const tabConnectRequests = document.getElementById('tab-connect-requests');
+  const connectViewShare = document.getElementById('connect-view-share');
+  const connectViewJoin = document.getElementById('connect-view-join');
+  const connectViewRequests = document.getElementById('connect-view-requests');
+
+  function switchConnectTab(tabName) {
+    if (!tabConnectShare || !tabConnectJoin || !tabConnectRequests) return;
+
+    tabConnectShare.classList.toggle('active', tabName === 'share');
+    tabConnectJoin.classList.toggle('active', tabName === 'join');
+    tabConnectRequests.classList.toggle('active', tabName === 'requests');
+
+    connectViewShare.style.display = tabName === 'share' ? 'flex' : 'none';
+    connectViewJoin.style.display = tabName === 'join' ? 'flex' : 'none';
+    connectViewRequests.style.display = tabName === 'requests' ? 'flex' : 'none';
+
+    if (tabName === 'requests') {
+      renderChatRequestsUI();
+    }
+  }
+
+  if (tabConnectShare) tabConnectShare.addEventListener('click', () => switchConnectTab('share'));
+  if (tabConnectJoin) tabConnectJoin.addEventListener('click', () => switchConnectTab('join'));
+  if (tabConnectRequests) tabConnectRequests.addEventListener('click', () => switchConnectTab('requests'));
+
+  // Open Connect Modal Buttons
+  function showConnectModal(defaultTab = 'share') {
+    openModal('modal-connect');
+    switchConnectTab(defaultTab);
+    fetchOrCreateUserJoinKey();
+  }
+
+  if (btnOpenConnect) btnOpenConnect.addEventListener('click', () => showConnectModal('share'));
+  if (btnEmptyConnect) btnEmptyConnect.addEventListener('click', () => showConnectModal('share'));
+  const btnEmptyOpenConnect = document.getElementById('btn-empty-open-connect');
+  if (btnEmptyOpenConnect) btnEmptyOpenConnect.addEventListener('click', () => showConnectModal('share'));
+
+  // Fetch or Generate Join Key & QR
+  async function fetchOrCreateUserJoinKey(forceNew = false) {
+    if (!currentAccount) return;
+    try {
+      const res = await fetch('/api/auth/invitations/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentAccount.sessionToken}`
+        },
+        body: JSON.stringify({ type: 'direct' })
+      });
+      const data = await res.json();
+      if (res.ok && data.invitation) {
+        activeJoinKey = data.invitation.code;
+        const keyEl = document.getElementById('my-join-key-text');
+        if (keyEl) keyEl.textContent = activeJoinKey;
+
+        const userLabel = document.getElementById('invite-qr-user-label');
+        if (userLabel) userLabel.textContent = `@${currentAccount.username}`;
+
+        // Render QR Code Canvas
+        const canvas = document.getElementById('invite-qr-canvas');
+        if (canvas && window.QRCode) {
+          const inviteUrl = `${window.location.origin}/?join=${encodeURIComponent(activeJoinKey)}`;
+          window.QRCode.toCanvas(canvas, inviteUrl, {
+            width: 200,
+            margin: 2,
+            color: {
+              dark: '#1B4332',
+              light: '#FFFFFF'
+            }
+          }, (err) => {
+            if (err) console.error('QR code error:', err);
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching join key:', err);
+    }
+  }
+
+  // Copy Join Key
+  const btnCopyJoinKey = document.getElementById('btn-copy-join-key');
+  if (btnCopyJoinKey) {
+    btnCopyJoinKey.addEventListener('click', async () => {
+      if (!activeJoinKey) return;
+      try {
+        await navigator.clipboard.writeText(activeJoinKey);
+        showToast(`Join Key ${activeJoinKey} copied!`);
+      } catch (e) {
+        showToast(`Key: ${activeJoinKey}`);
+      }
+    });
+  }
+
+  // Share Native Link
+  const btnShareNativeLink = document.getElementById('btn-share-native-link');
+  if (btnShareNativeLink) {
+    btnShareNativeLink.addEventListener('click', async () => {
+      if (!activeJoinKey) return;
+      const joinUrl = `${window.location.origin}/?join=${encodeURIComponent(activeJoinKey)}`;
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: 'Connect on MyCircle',
+            text: `Join my private circle on MyCircle! Use Join Key: ${activeJoinKey}`,
+            url: joinUrl
+          });
+        } catch (e) {}
+      } else {
+        await navigator.clipboard.writeText(joinUrl);
+        showToast('Invite link copied to clipboard!');
+      }
+    });
+  }
+
+  // Refresh / Revoke & Generate New Key
+  const btnRefreshJoinKey = document.getElementById('btn-refresh-join-key');
+  if (btnRefreshJoinKey) {
+    btnRefreshJoinKey.addEventListener('click', async () => {
+      if (activeJoinKey) {
+        await fetch('/api/auth/invitations/revoke', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${currentAccount.sessionToken}`
+          },
+          body: JSON.stringify({ code: activeJoinKey })
+        });
+      }
+      await fetchOrCreateUserJoinKey(true);
+      showToast('Generated fresh Join Key!');
+    });
+  }
+
+  // Look Up Join Key
+  const btnVerifyJoinKey = document.getElementById('btn-verify-join-key');
+  const inputEnterJoinKey = document.getElementById('input-enter-join-key');
+  const joinKeyPreview = document.getElementById('join-key-preview');
+  let verifiedInvitation = null;
+
+  async function lookupJoinKey(code) {
+    const cleanCode = (code || '').toUpperCase().trim();
+    if (!cleanCode) {
+      return showToast('Please enter a join key.');
+    }
+
+    btnVerifyJoinKey.disabled = true;
+    btnVerifyJoinKey.textContent = 'Verifying...';
+
+    try {
+      const res = await fetch(`/api/auth/invitations/lookup/${encodeURIComponent(cleanCode)}`);
+      const data = await res.json();
+
+      if (!res.ok) {
+        joinKeyPreview.style.display = 'none';
+        throw new Error(data.error || 'Invalid or expired invitation key.');
+      }
+
+      verifiedInvitation = data;
+      const creator = data.creator;
+
+      if (creator.username.toLowerCase() === currentAccount.username.toLowerCase()) {
+        joinKeyPreview.style.display = 'none';
+        throw new Error('This is your own Join Key.');
+      }
+
+      // Populate preview card
+      document.getElementById('join-preview-avatar').textContent = (creator.displayName || creator.username).charAt(0).toUpperCase();
+      document.getElementById('join-preview-name').textContent = creator.displayName || creator.username;
+      document.getElementById('join-preview-handle').textContent = `@${creator.username}`;
+      document.getElementById('join-preview-status').textContent = 'Key verified. Tap below to send a chat request.';
+
+      joinKeyPreview.style.display = 'block';
+    } catch (err) {
+      showToast(err.message || 'Could not verify join key.');
+    } finally {
+      btnVerifyJoinKey.disabled = false;
+      btnVerifyJoinKey.textContent = 'Look Up';
+    }
+  }
+
+  if (btnVerifyJoinKey) {
+    btnVerifyJoinKey.addEventListener('click', () => {
+      lookupJoinKey(inputEnterJoinKey.value);
+    });
+  }
+
+  if (inputEnterJoinKey) {
+    inputEnterJoinKey.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        lookupJoinKey(inputEnterJoinKey.value);
+      }
+    });
+  }
+
+  // Send Chat Request from Verified Join Key
+  const btnSendJoinRequest = document.getElementById('btn-send-join-request');
+  if (btnSendJoinRequest) {
+    btnSendJoinRequest.addEventListener('click', async () => {
+      if (!verifiedInvitation) return;
+      const creator = verifiedInvitation.creator;
+
+      btnSendJoinRequest.disabled = true;
+      btnSendJoinRequest.textContent = 'Sending Request...';
+
+      try {
+        const res = await fetch('/api/auth/chat-requests/send', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${currentAccount.sessionToken}`
+          },
+          body: JSON.stringify({
+            recipientUsername: creator.username,
+            joinKey: verifiedInvitation.invitation.code
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to send chat request.');
+
+        // Save contact locally
+        await window.MyCircleStorage.saveContact(creator);
+
+        showToast(`Chat request sent to @${creator.username}! Waiting for approval.`);
+        joinKeyPreview.style.display = 'none';
+        inputEnterJoinKey.value = '';
+        verifiedInvitation = null;
+
+        await loadChatRequests();
+        switchConnectTab('requests');
+      } catch (err) {
+        showToast(err.message || 'Failed to send chat request.');
+      } finally {
+        btnSendJoinRequest.disabled = false;
+        btnSendJoinRequest.textContent = 'Send Chat Request';
+      }
+    });
+  }
+
+  // Load and Render Chat Requests
+  async function loadChatRequests() {
+    if (!currentAccount || !currentAccount.sessionToken) return;
+    try {
+      const res = await fetch('/api/auth/chat-requests', {
+        headers: { Authorization: `Bearer ${currentAccount.sessionToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        chatRequests = data || { incoming: [], outgoing: [] };
+
+        const pendingIncoming = (chatRequests.incoming || []).filter(r => r.status === 'pending');
+        const count = pendingIncoming.length;
+
+        // Update badges
+        if (requestsBadge) {
+          requestsBadge.textContent = count;
+          requestsBadge.style.display = count > 0 ? 'inline-block' : 'none';
+        }
+        const tabBadge = document.getElementById('requests-tab-badge');
+        if (tabBadge) {
+          tabBadge.textContent = count;
+          tabBadge.style.display = count > 0 ? 'inline-block' : 'none';
+        }
+
+        renderChatRequestsUI();
+      }
+    } catch (e) {
+      console.warn('Error loading chat requests:', e);
+    }
+  }
+
+  function renderChatRequestsUI() {
+    const incomingList = document.getElementById('incoming-requests-list');
+    const outgoingList = document.getElementById('outgoing-requests-list');
+    if (!incomingList || !outgoingList) return;
+
+    // 1. Incoming Requests
+    incomingList.innerHTML = '';
+    const pendingIncoming = (chatRequests.incoming || []).filter(r => r.status === 'pending');
+
+    if (pendingIncoming.length === 0) {
+      incomingList.innerHTML = '<p style="font-size: 0.82rem; color: var(--text-muted); padding: 0.4rem;">No incoming requests.</p>';
+    } else {
+      pendingIncoming.forEach(req => {
+        const item = document.createElement('div');
+        item.className = 'group-member-item';
+        item.innerHTML = `
+          <div class="avatar" style="width: 36px; height: 36px; font-size: 0.9rem;">
+            ${(req.fromDisplayName || req.fromUsername).charAt(0).toUpperCase()}
+          </div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 0.88rem; color: var(--text-main);">
+              ${escapeHTML(req.fromDisplayName || req.fromUsername)}
+            </div>
+            <div style="font-size: 0.76rem; color: var(--text-muted);">@${escapeHTML(req.fromUsername)}</div>
+          </div>
+          <div style="display: flex; gap: 0.4rem;">
+            <button type="button" class="btn-primary btn-accept-req" data-id="${req.id}" style="width: auto; padding: 0.4rem 0.8rem; font-size: 0.78rem;">
+              Accept
+            </button>
+            <button type="button" class="btn-secondary btn-reject-req" data-id="${req.id}" style="width: auto; padding: 0.4rem 0.8rem; font-size: 0.78rem; color: var(--color-danger);">
+              Decline
+            </button>
+          </div>
+        `;
+
+        item.querySelector('.btn-accept-req').addEventListener('click', () => respondToRequest(req.id, 'accepted'));
+        item.querySelector('.btn-reject-req').addEventListener('click', () => respondToRequest(req.id, 'rejected'));
+
+        incomingList.appendChild(item);
+      });
+    }
+
+    // 2. Outgoing Requests
+    outgoingList.innerHTML = '';
+    const outList = chatRequests.outgoing || [];
+
+    if (outList.length === 0) {
+      outgoingList.innerHTML = '<p style="font-size: 0.82rem; color: var(--text-muted); padding: 0.4rem;">No outgoing requests.</p>';
+    } else {
+      outList.slice(0, 8).forEach(req => {
+        const item = document.createElement('div');
+        item.className = 'group-member-item';
+
+        let statusText = 'Waiting for response';
+        let statusColor = 'var(--text-muted)';
+        if (req.status === 'accepted') {
+          statusText = 'Accepted ✓';
+          statusColor = 'var(--color-online)';
+        } else if (req.status === 'rejected') {
+          statusText = 'Declined';
+          statusColor = 'var(--color-danger)';
+        } else if (req.status === 'cancelled') {
+          statusText = 'Cancelled';
+        }
+
+        item.innerHTML = `
+          <div class="avatar" style="width: 36px; height: 36px; font-size: 0.9rem;">
+            ${req.toUsername.charAt(0).toUpperCase()}
+          </div>
+          <div style="flex: 1;">
+            <div style="font-weight: 600; font-size: 0.88rem; color: var(--text-main);">
+              @${escapeHTML(req.toUsername)}
+            </div>
+            <div style="font-size: 0.76rem; color: ${statusColor}; font-weight: 500;">${statusText}</div>
+          </div>
+          ${req.status === 'pending' ? `
+            <button type="button" class="btn-secondary btn-cancel-req" data-id="${req.id}" style="width: auto; padding: 0.35rem 0.65rem; font-size: 0.75rem;">
+              Cancel
+            </button>
+          ` : ''}
+        `;
+
+        const cancelBtn = item.querySelector('.btn-cancel-req');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', () => respondToRequest(req.id, 'cancelled'));
+        }
+
+        outgoingList.appendChild(item);
+      });
+    }
+  }
+
+  async function respondToRequest(requestId, action) {
+    try {
+      const res = await fetch(`/api/auth/chat-requests/${requestId}/respond`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentAccount.sessionToken}`
+        },
+        body: JSON.stringify({ action })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to respond to request.');
+
+      if (action === 'accepted') {
+        const req = data.request;
+        const peer = (req.fromUsername === currentAccount.username) ? req.toUsername : req.fromUsername;
+
+        // Fetch peer public keys
+        let peerDisplayName = peer;
+        try {
+          const uRes = await fetch(`/api/auth/users/${peer}`);
+          if (uRes.ok) {
+            const uData = await uRes.json();
+            if (uData.user) {
+              peerDisplayName = uData.user.displayName || peer;
+              await window.MyCircleStorage.saveContact(uData.user);
+            }
+          }
+        } catch (e) {}
+
+        const convId = `direct:${peer.toLowerCase()}`;
+        let conv = await window.MyCircleStorage.getConversation(convId);
+        if (!conv) {
+          conv = {
+            id: convId,
+            type: 'direct',
+            name: peerDisplayName,
+            peerUsername: peer.toLowerCase(),
+            unreadCount: 0,
+            updatedAt: Date.now()
+          };
+          await window.MyCircleStorage.saveConversation(conv);
+        }
+
+        closeModal('modal-connect');
+        await loadConversations();
+        openConversation(conv);
+        showToast(`Connected with @${peer}! Start chatting.`);
+      } else if (action === 'rejected') {
+        showToast('Request declined.');
+      } else if (action === 'cancelled') {
+        showToast('Request cancelled.');
+      }
+
+      await loadChatRequests();
+    } catch (err) {
+      showToast(err.message || 'Error updating request');
+    }
+  }
+
+  // Check URL parameters for ?join= or ?invite=
+  function checkUrlJoinParams() {
+    const params = new URLSearchParams(window.location.search);
+    const joinCode = params.get('join') || params.get('invite');
+    if (joinCode && currentAccount) {
+      showConnectModal('join');
+      inputEnterJoinKey.value = joinCode;
+      lookupJoinKey(joinCode);
+      // Clean query parameter without reload
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }
 
   // ==========================================================================
   // Messages Area & Bubble Rendering
@@ -650,16 +1547,6 @@
     });
 
     scrollToBottom();
-  }
-
-  function formatDateDivider(timestamp) {
-    const d = new Date(timestamp);
-    const now = new Date();
-    if (d.toDateString() === now.toDateString()) return 'Today';
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
-    return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
   }
 
   function appendMessageBubble(msg, shouldScroll = true) {
@@ -711,7 +1598,9 @@
   }
 
   function scrollToBottom() {
-    messagesScroll.scrollTop = messagesScroll.scrollHeight;
+    if (messagesScroll) {
+      messagesScroll.scrollTop = messagesScroll.scrollHeight;
+    }
   }
 
   // ==========================================================================
@@ -763,7 +1652,6 @@
         const peer = activeConversation.peerUsername.toLowerCase();
         let contact = await window.MyCircleStorage.getContact(peer);
         if (!contact || !contact.ecdhPublicKey) {
-          // Fetch public key from directory
           const res = await fetch(`/api/auth/users/${peer}`);
           if (res.ok) {
             const data = await res.json();
@@ -812,7 +1700,6 @@
       showToast(err.message || 'Message delivery failed. Tap to retry.');
     } finally {
       btnSendMessage.disabled = false;
-      // Reload active message bubble status
       await loadMessages(activeConversation.id);
       await loadConversations();
     }
@@ -842,477 +1729,202 @@
 
   // Global Retry Message Handler
   window.retryMessage = async function (msgId) {
+    if (!activeConversation) return;
     const messages = await window.MyCircleStorage.getMessages(activeConversation.id);
     const msg = messages.find(m => m.id === msgId);
     if (!msg) return;
 
     messageInput.value = msg.content;
-    // Delete failed record and resend
     await window.MyCircleStorage.updateMessageStatus(msgId, 'sending');
     sendMessage();
   };
 
   // ==========================================================================
-  // New Chat & User Search Modal
+  // New Group Modal
   // ==========================================================================
-  document.getElementById('btn-open-search').addEventListener('click', () => {
-    openModal('modal-search');
-    document.getElementById('user-search-field').focus();
-    searchUsers('');
-  });
+  if (btnOpenNewGroup) {
+    btnOpenNewGroup.addEventListener('click', async () => {
+      openModal('modal-new-group');
+      document.getElementById('group-name-input').value = '';
+      const picker = document.getElementById('group-members-picker');
+      picker.innerHTML = '';
 
-  document.getElementById('btn-empty-start-chat').addEventListener('click', () => {
-    openModal('modal-search');
-    searchUsers('');
-  });
-
-  document.getElementById('btn-empty-search-top').addEventListener('click', () => {
-    openModal('modal-search');
-    searchUsers('');
-  });
-
-  let searchDebounce = null;
-  document.getElementById('user-search-field').addEventListener('input', (e) => {
-    clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => {
-      searchUsers(e.target.value);
-    }, 250);
-  });
-
-  async function searchUsers(query) {
-    const listEl = document.getElementById('search-results-list');
-    listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem;">Searching users...</div>';
-
-    try {
-      const res = await fetch(`/api/auth/users/search?q=${encodeURIComponent(query)}&exclude=${encodeURIComponent(currentAccount.username)}`);
-      const data = await res.json();
-      const users = data.users || [];
-
-      if (users.length === 0) {
-        listEl.innerHTML = '<div style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem;">No matching users found.</div>';
+      const contacts = await window.MyCircleStorage.getAllContacts();
+      if (contacts.length === 0) {
+        picker.innerHTML = '<p style="font-size: 0.82rem; color: var(--text-muted); padding: 0.5rem;">No contacts saved yet. Connect with people first to add them to a circle.</p>';
         return;
       }
 
-      listEl.innerHTML = '';
-      users.forEach(u => {
-        const item = document.createElement('div');
-        item.className = 'conversation-item';
-        item.style.padding = '0.65rem 0.75rem';
-        item.innerHTML = `
-          <div class="conv-avatar-wrapper">
-            <div class="avatar">${u.displayName.charAt(0).toUpperCase()}</div>
-            <div class="avatar-status-badge ${u.isOnline ? 'online' : ''}"></div>
-          </div>
-          <div class="conv-content">
-            <div class="conv-top-row">
-              <span class="conv-name">${escapeHTML(u.displayName)}</span>
-              <span style="font-size: 0.75rem; color: var(--text-muted);">@${escapeHTML(u.username)}</span>
-            </div>
-            <div class="conv-bottom-row">
-              <span style="font-size: 0.75rem; font-family: var(--font-mono); color: var(--brand-secondary);">
-                Fingerprint: ${u.fingerprint ? u.fingerprint.slice(0, 10) + '...' : 'Available'}
-              </span>
-            </div>
-          </div>
-        `;
-
-        item.addEventListener('click', async () => {
-          closeModal('modal-search');
-          // Save contact to IndexedDB
-          await window.MyCircleStorage.saveContact(u);
-
-          // Create or retrieve conversation
-          const convId = `direct:${u.username.toLowerCase()}`;
-          let conv = await window.MyCircleStorage.getConversation(convId);
-          if (!conv) {
-            conv = {
-              id: convId,
-              type: 'direct',
-              name: u.displayName || u.username,
-              peerUsername: u.username.toLowerCase(),
-              unreadCount: 0,
-              updatedAt: Date.now()
-            };
-            await window.MyCircleStorage.saveConversation(conv);
-          }
-
-          openConversation(conv);
-        });
-
-        listEl.appendChild(item);
-      });
-    } catch (err) {
-      listEl.innerHTML = `<div style="color: var(--color-danger); font-size: 0.85rem;">Error: ${err.message}</div>`;
-    }
-  }
-
-  // ==========================================================================
-  // New Group Modal
-  // ==========================================================================
-  document.getElementById('btn-open-new-group').addEventListener('click', async () => {
-    openModal('modal-new-group');
-    document.getElementById('group-name-input').value = '';
-    const picker = document.getElementById('group-members-picker');
-    picker.innerHTML = '';
-
-    const contacts = await window.MyCircleStorage.getAllContacts();
-    if (contacts.length === 0) {
-      picker.innerHTML = '<p style="font-size: 0.82rem; color: var(--text-muted);">No contacts saved yet. Find users first to add them to a circle.</p>';
-      return;
-    }
-
-    contacts.forEach(c => {
-      const label = document.createElement('label');
-      label.className = 'settings-item';
-      label.style.cursor = 'pointer';
-      label.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 0.6rem;">
+      contacts.forEach(c => {
+        const label = document.createElement('label');
+        label.className = 'group-member-item';
+        label.style.cursor = 'pointer';
+        label.innerHTML = `
           <div class="avatar" style="width: 32px; height: 32px; font-size: 0.85rem;">${c.displayName.charAt(0).toUpperCase()}</div>
-          <div>
+          <div style="flex: 1;">
             <div style="font-size: 0.88rem; font-weight: 600;">${escapeHTML(c.displayName)}</div>
             <div style="font-size: 0.75rem; color: var(--text-muted);">@${escapeHTML(c.username)}</div>
           </div>
-        </div>
-        <input type="checkbox" name="group-member" value="${escapeHTML(c.username)}" style="width: 18px; height: 18px; accent-color: var(--brand-primary);">
-      `;
-      picker.appendChild(label);
-    });
-  });
-
-  document.getElementById('btn-create-group-confirm').addEventListener('click', async () => {
-    const name = document.getElementById('group-name-input').value.trim();
-    if (!name) return showToast('Please enter a circle name');
-
-    const checkedBoxes = Array.from(document.querySelectorAll('input[name="group-member"]:checked'));
-    const members = checkedBoxes.map(b => b.value);
-
-    try {
-      const conv = await window.MyCircleGroupCrypto.createGroup(name, members, currentAccount);
-      closeModal('modal-new-group');
-      showToast(`Circle "${name}" created with Epoch 1 key!`);
-      await loadConversations();
-      openConversation(conv);
-    } catch (err) {
-      showToast(err.message || 'Failed to create group');
-    }
-  });
-
-  // ==========================================================================
-  // Group Info & Member Management (Key Rotation)
-  // ==========================================================================
-  btnGroupManage.addEventListener('click', async () => {
-    if (!activeConversation || activeConversation.type !== 'group') return;
-    openModal('modal-group-info');
-    document.getElementById('group-info-title').textContent = activeConversation.name;
-    document.getElementById('group-epoch-display').textContent = `Epoch: ${activeConversation.epoch || 1} • AES-256-GCM Active`;
-
-    renderGroupMembersList();
-  });
-
-  function renderGroupMembersList() {
-    const listEl = document.getElementById('group-members-list');
-    listEl.innerHTML = '';
-
-    const isAdmin = activeConversation.admin === currentAccount.username;
-
-    activeConversation.members.forEach(member => {
-      const isSelf = member.toLowerCase() === currentAccount.username.toLowerCase();
-      const row = document.createElement('div');
-      row.className = 'settings-item';
-      row.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span style="font-size: 0.88rem; font-weight: 600;">@${escapeHTML(member)}</span>
-          ${member === activeConversation.admin ? '<span class="auth-e2e-badge" style="font-size: 0.68rem; padding: 0.15rem 0.4rem;">Admin</span>' : ''}
-          ${isSelf ? '<span style="font-size: 0.75rem; color: var(--text-muted);">(You)</span>' : ''}
-        </div>
-        ${(isAdmin && !isSelf) ? `
-          <button type="button" class="btn-secondary btn-remove-member" data-member="${escapeHTML(member)}" style="width: auto; padding: 0.35rem 0.7rem; font-size: 0.78rem; color: var(--color-danger); border-color: rgba(192, 57, 43, 0.3);">
-            Remove & Rekey
-          </button>
-        ` : ''}
-      `;
-
-      listEl.appendChild(row);
-    });
-
-    // Add remove listeners
-    listEl.querySelectorAll('.btn-remove-member').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const member = btn.getAttribute('data-member');
-        showConfirm(
-          'Remove Member & Rotate Keys',
-          `Are you sure you want to remove @${member}? This will rotate the group encryption key. @${member} will be permanently blocked from decrypting future messages.`,
-          async () => {
-            try {
-              const updatedConv = await window.MyCircleGroupCrypto.rotateGroupKeyOnMemberRemoval(
-                activeConversation.groupId,
-                member,
-                currentAccount
-              );
-              activeConversation = updatedConv;
-              document.getElementById('group-epoch-display').textContent = `Epoch: ${updatedConv.epoch} • AES-256-GCM Rotated`;
-              renderGroupMembersList();
-              await loadMessages(activeConversation.id);
-              await loadConversations();
-              showToast(`@${member} removed. Encryption key rotated to Epoch ${updatedConv.epoch}!`);
-            } catch (err) {
-              showToast(err.message || 'Failed to remove member');
-            }
-          }
-        );
+          <input type="checkbox" name="group-member" value="${escapeHTML(c.username)}" style="width: 18px; height: 18px; accent-color: var(--brand-primary); cursor: pointer;">
+        `;
+        picker.appendChild(label);
       });
     });
   }
 
-  // Add Member to Group
-  document.getElementById('btn-add-member-submit').addEventListener('click', async () => {
-    const input = document.getElementById('add-member-username');
-    const member = input.value.trim().toLowerCase();
-    if (!member) return showToast('Please enter a username');
-
-    if (activeConversation.members.map(m => m.toLowerCase()).includes(member)) {
-      return showToast(`@${member} is already in this circle`);
-    }
-
-    try {
-      // Ensure member contact exists
-      let contact = await window.MyCircleStorage.getContact(member);
-      if (!contact) {
-        const res = await fetch(`/api/auth/users/${member}`);
-        if (!res.ok) throw new Error(`User @${member} not found`);
-        const data = await res.json();
-        contact = data.user;
-        await window.MyCircleStorage.saveContact(contact);
-      }
-
-      // Add member to group conversation
-      activeConversation.members.push(member);
-      await window.MyCircleStorage.saveConversation(activeConversation);
-
-      // Distribute active epoch key to new member
-      const epoch = activeConversation.epoch || 1;
-      const keyRecord = await window.MyCircleStorage.getGroupKey(activeConversation.groupId, epoch);
-      if (keyRecord) {
-        const localPriv = await window.MyCircleCrypto.importECDHPrivateKey(currentAccount.jwk.ecdhPrivate);
-        const remotePub = await window.MyCircleCrypto.importECDHPublicKey(contact.ecdhPublicKey);
-        const pairwiseKey = await window.MyCircleCrypto.derivePairwiseKey(localPriv, remotePub);
-
-        const encKeyPacket = await window.MyCircleCrypto.encryptGroupKeyForMember(
-          pairwiseKey,
-          keyRecord.rawGroupKey,
-          activeConversation.groupId,
-          epoch
-        );
-
-        window.MyCircleSignaling.sendGroupRekeyDistribution(activeConversation.groupId, epoch, [
-          { recipient: member, encryptedKeyPacket: encKeyPacket }
-        ]);
-      }
-
-      input.value = '';
-      renderGroupMembersList();
-      showToast(`@${member} added to the circle!`);
-    } catch (err) {
-      showToast(err.message || 'Failed to add member');
-    }
-  });
-
-  // Leave Group
-  document.getElementById('btn-leave-group').addEventListener('click', () => {
-    showConfirm('Leave Circle', 'Are you sure you want to leave this circle? You will no longer receive new messages.', async () => {
-      closeModal('modal-group-info');
-      await window.MyCircleStorage.deleteConversation(activeConversation.id);
-      activeConversation = null;
-      chatActive.classList.remove('visible');
-      chatUnselected.style.display = 'flex';
-      document.querySelector('.app-layout').classList.remove('conversation-open');
-      await loadConversations();
-      showToast('You left the circle');
+  const btnEmptyOpenGroup = document.getElementById('btn-empty-open-group');
+  if (btnEmptyOpenGroup) {
+    btnEmptyOpenGroup.addEventListener('click', () => {
+      if (btnOpenNewGroup) btnOpenNewGroup.click();
     });
-  });
-
-  // ==========================================================================
-  // Invite Friends & QR Code
-  // ==========================================================================
-  document.getElementById('btn-open-invite').addEventListener('click', showInviteModal);
-  document.getElementById('btn-empty-invite').addEventListener('click', showInviteModal);
-
-  async function showInviteModal() {
-    openModal('modal-invite');
-    document.getElementById('invite-qr-user-label').textContent = `@${currentAccount.username}`;
-
-    const inviteUrl = `${window.location.origin}/?invite=${encodeURIComponent(currentAccount.username)}&key=${encodeURIComponent(currentAccount.fingerprint || '')}`;
-    document.getElementById('invite-link-text').textContent = inviteUrl;
-
-    // Render Canvas QR Code
-    const canvas = document.getElementById('invite-qr-canvas');
-    if (window.QRCode && canvas) {
-      try {
-        await window.QRCode.toCanvas(canvas, inviteUrl, {
-          width: 200,
-          margin: 2,
-          color: {
-            dark: '#1B4332',
-            light: '#FFFFFF'
-          }
-        });
-      } catch (err) {
-        console.error('QR code generation error:', err);
-      }
-    }
   }
 
-  // Copy Invite Link
-  document.getElementById('btn-copy-invite').addEventListener('click', async () => {
-    const inviteUrl = document.getElementById('invite-link-text').textContent;
-    try {
-      await navigator.clipboard.writeText(inviteUrl);
-      showToast('Invite link copied to clipboard!');
-    } catch (err) {
-      showToast('Could not copy automatically. Please select and copy text.');
-    }
-  });
+  const btnCreateGroupConfirm = document.getElementById('btn-create-group-confirm');
+  if (btnCreateGroupConfirm) {
+    btnCreateGroupConfirm.addEventListener('click', async () => {
+      const name = document.getElementById('group-name-input').value.trim();
+      if (!name) return showToast('Please enter a circle name');
 
-  // Native Web Share API
-  document.getElementById('btn-share-native').addEventListener('click', async () => {
-    const inviteUrl = document.getElementById('invite-link-text').textContent;
-    if (navigator.share) {
+      const checkedBoxes = Array.from(document.querySelectorAll('input[name="group-member"]:checked'));
+      const members = checkedBoxes.map(b => b.value);
+
+      btnCreateGroupConfirm.disabled = true;
+      btnCreateGroupConfirm.textContent = 'Creating Circle...';
+
       try {
-        await navigator.share({
-          title: 'MyCircle — Private Messaging',
-          text: `Connect with me on MyCircle for secure, end-to-end encrypted private messaging!`,
-          url: inviteUrl
-        });
+        const conv = await window.MyCircleGroupCrypto.createGroup(name, members, currentAccount);
+        closeModal('modal-new-group');
+        showToast(`Circle "${name}" created with Epoch 1 key!`);
+        await loadConversations();
+        openConversation(conv);
       } catch (err) {
-        console.log('Share dismissed');
+        showToast(err.message || 'Failed to create group');
+      } finally {
+        btnCreateGroupConfirm.disabled = false;
+        btnCreateGroupConfirm.textContent = 'Create Circle';
       }
-    } else {
-      await navigator.clipboard.writeText(inviteUrl);
-      showToast('Share link copied to clipboard!');
-    }
-  });
-
-  // Check if current URL contains an invite parameter
-  async function checkInviteUrl() {
-    const params = new URLSearchParams(window.location.search);
-    const inviteUser = params.get('invite');
-    if (inviteUser && currentAccount && inviteUser.toLowerCase() !== currentAccount.username.toLowerCase()) {
-      try {
-        const res = await fetch(`/api/auth/users/${encodeURIComponent(inviteUser)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.user) {
-            await window.MyCircleStorage.saveContact(data.user);
-
-            const convId = `direct:${data.user.username.toLowerCase()}`;
-            let conv = await window.MyCircleStorage.getConversation(convId);
-            if (!conv) {
-              conv = {
-                id: convId,
-                type: 'direct',
-                name: data.user.displayName || data.user.username,
-                peerUsername: data.user.username.toLowerCase(),
-                unreadCount: 0,
-                updatedAt: Date.now()
-              };
-              await window.MyCircleStorage.saveConversation(conv);
-            }
-
-            openConversation(conv);
-            showToast(`Connected with @${data.user.username}!`);
-
-            // Clean URL parameter without reloading
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
-        }
-      } catch (err) {
-        console.error('Error accepting invite URL:', err);
-      }
-    }
+    });
   }
 
   // ==========================================================================
   // Safety Numbers Verification Modal
   // ==========================================================================
-  btnVerifySafety.addEventListener('click', async () => {
-    if (!activeConversation || activeConversation.type === 'group') return;
-    openModal('modal-safety');
+  if (btnVerifySafety) {
+    btnVerifySafety.addEventListener('click', async () => {
+      if (!activeConversation || activeConversation.type === 'group') return;
+      openModal('modal-safety');
 
-    const peer = activeConversation.peerUsername.toLowerCase();
-    const contact = await window.MyCircleStorage.getContact(peer);
-    if (!contact || !contact.ecdhPublicKey) {
-      showToast('Public keys not yet exchanged for this contact.');
-      return;
-    }
+      const peer = activeConversation.peerUsername.toLowerCase();
+      const contact = await window.MyCircleStorage.getContact(peer);
+      if (!contact || !contact.ecdhPublicKey) {
+        showToast('Public keys not yet exchanged for this contact.');
+        return;
+      }
 
-    const safety = await window.MyCircleCrypto.generateSafetyNumbers(
-      currentAccount.jwk.ecdhPublic,
-      contact.ecdhPublicKey
-    );
+      const safety = await window.MyCircleCrypto.generateSafetyNumbers(
+        currentAccount.jwk.ecdhPublic,
+        contact.ecdhPublicKey
+      );
 
-    const grid = document.getElementById('safety-numbers-container');
-    grid.innerHTML = '';
-    safety.groups.forEach(chunk => {
-      const div = document.createElement('div');
-      div.className = 'safety-chunk';
-      div.textContent = chunk;
-      grid.appendChild(div);
+      const grid = document.getElementById('safety-numbers-container');
+      grid.innerHTML = '';
+      safety.groups.forEach(chunk => {
+        const div = document.createElement('div');
+        div.className = 'safety-chunk';
+        div.textContent = chunk;
+        grid.appendChild(div);
+      });
+
+      const check = document.getElementById('check-mark-verified');
+      check.checked = !!contact.isVerified;
+
+      check.onchange = async () => {
+        await window.MyCircleStorage.markContactVerified(peer, check.checked);
+        showToast(check.checked ? 'Marked as verified!' : 'Verification badge removed');
+      };
     });
-
-    const check = document.getElementById('check-mark-verified');
-    check.checked = !!contact.isVerified;
-
-    check.onchange = async () => {
-      await window.MyCircleStorage.markContactVerified(peer, check.checked);
-      showToast(check.checked ? 'Marked as verified!' : 'Verification badge removed');
-    };
-  });
+  }
 
   // ==========================================================================
   // Settings & Privacy Modal
   // ==========================================================================
-  document.getElementById('btn-open-settings').addEventListener('click', () => {
-    openModal('modal-settings');
-  });
+  if (btnOpenSettings) {
+    btnOpenSettings.addEventListener('click', () => {
+      openModal('modal-settings');
+    });
+  }
 
   // Theme selector
   const themeSelect = document.getElementById('theme-select');
-  themeSelect.addEventListener('change', async (e) => {
-    const theme = e.target.value;
-    document.documentElement.setAttribute('data-theme', theme);
-    await window.MyCircleStorage.setSetting('theme', theme);
-  });
+  if (themeSelect) {
+    themeSelect.addEventListener('change', async (e) => {
+      const theme = e.target.value;
+      document.documentElement.setAttribute('data-theme', theme);
+      await window.MyCircleStorage.setSetting('theme', theme);
+    });
+  }
 
   // Clear Chat History
-  document.getElementById('btn-clear-history').addEventListener('click', () => {
-    showConfirm(
-      'Clear Local Chat History',
-      'WARNING: This will permanently delete all locally stored encrypted messages, contacts, and circles on this device. Since MyCircle does not store your messages on a central database, this cannot be undone.',
-      async () => {
-        closeModal('modal-settings');
-        await window.MyCircleStorage.clearAllLocalData();
-        activeConversation = null;
-        chatActive.classList.remove('visible');
-        chatUnselected.style.display = 'flex';
-        document.querySelector('.app-layout').classList.remove('conversation-open');
-        await loadConversations();
-        showToast('All local chat history cleared.');
-      }
-    );
-  });
+  const btnClearHistory = document.getElementById('btn-clear-history');
+  if (btnClearHistory) {
+    btnClearHistory.addEventListener('click', () => {
+      showConfirm(
+        'Clear Local Chat History',
+        'WARNING: This will permanently delete all locally stored encrypted messages, contacts, and circles on this device. Since MyCircle does not store your messages on a central database, this cannot be undone.',
+        async () => {
+          closeModal('modal-settings');
+          await window.MyCircleStorage.clearAllLocalData();
+          activeConversation = null;
+          chatActive.classList.remove('visible');
+          chatUnselected.style.display = 'flex';
+          document.querySelector('.app-layout').classList.remove('conversation-open');
+          await loadConversations();
+          showToast('All local chat history cleared.');
+        }
+      );
+    });
+  }
 
   // Sign Out
-  document.getElementById('btn-logout').addEventListener('click', async () => {
-    closeModal('modal-settings');
-    window.MyCircleSignaling.disconnect();
-    await window.MyCircleAuth.logout();
-    currentAccount = null;
-    activeConversation = null;
-    mainView.style.display = 'none';
-    authView.style.display = 'flex';
-    document.querySelector('.app-layout').classList.remove('conversation-open');
-    showToast('Signed out securely');
-  });
+  const btnLogout = document.getElementById('btn-logout');
+  if (btnLogout) {
+    btnLogout.addEventListener('click', async () => {
+      closeModal('modal-settings');
+      window.MyCircleSignaling.disconnect();
+      await window.MyCircleAuth.logout();
+      currentAccount = null;
+      activeConversation = null;
+      mainView.style.display = 'none';
+      authView.style.display = 'flex';
+      viewLogin.style.display = 'block';
+      viewSignup.style.display = 'none';
+      clearAuthAlerts();
+      document.querySelector('.app-layout').classList.remove('conversation-open');
+      showToast('Signed out securely');
+    });
+  }
+
+  // ==========================================================================
+  // Mobile Visual Viewport & Keyboard Handling
+  // ==========================================================================
+  if (window.visualViewport) {
+    const handleViewportChange = () => {
+      const vh = window.visualViewport.height;
+      document.documentElement.style.setProperty('--app-height', `${vh}px`);
+      if (activeConversation) {
+        scrollToBottom();
+      }
+    };
+    window.visualViewport.addEventListener('resize', handleViewportChange);
+    window.visualViewport.addEventListener('scroll', handleViewportChange);
+    handleViewportChange();
+  }
+
+  if (messageInput) {
+    messageInput.addEventListener('focus', () => {
+      setTimeout(scrollToBottom, 200);
+    });
+  }
 
   // ==========================================================================
   // Application Bootstrap
@@ -1324,19 +1936,21 @@
     // 2. Load stored theme
     const savedTheme = await window.MyCircleStorage.getSetting('theme', 'light');
     document.documentElement.setAttribute('data-theme', savedTheme);
-    themeSelect.value = savedTheme;
+    if (themeSelect) themeSelect.value = savedTheme;
 
-    // 3. Check for existing logged-in session
+    // 3. Check for existing valid session
     const account = await window.MyCircleAuth.checkSession();
     if (account) {
       await onAuthSuccess(account);
     } else {
       authView.style.display = 'flex';
       mainView.style.display = 'none';
+      viewLogin.style.display = 'block';
+      viewSignup.style.display = 'none';
     }
   }
 
-  // Start app
+  // Launch app
   init().catch(err => {
     console.error('Error during app bootstrap:', err);
   });

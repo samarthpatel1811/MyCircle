@@ -1,0 +1,32 @@
+[
+  {
+    "id": "req_mvb5qo7b_00b7ab30",
+    "fromUsername": "user2_mvb5qnvx",
+    "fromDisplayName": "Test User Two",
+    "toUsername": "user1_mvb5qnvx",
+    "joinKey": "MYC-D2CX-CMHR",
+    "status": "pending",
+    "createdAt": 1792166632967,
+    "updatedAt": 1792166632967
+  },
+  {
+    "id": "req_mvb5s0uq_2502a4ca",
+    "fromUsername": "user2_mvb5s0l0",
+    "fromDisplayName": "Test User Two",
+    "toUsername": "user1_mvb5s0l0",
+    "joinKey": "MYC-ECJK-JKK3",
+    "status": "accepted",
+    "createdAt": 1792166696019,
+    "updatedAt": 1792166696030
+  },
+  {
+    "id": "req_mvb5u6y9_7f1a9d4b",
+    "fromUsername": "user2_mvb5u6nx",
+    "fromDisplayName": "Test User Two",
+    "toUsername": "user1_mvb5u6nx",
+    "joinKey": "MYC-AX5A-453W",
+    "status": "accepted",
+    "createdAt": 1792166797233,
+    "updatedAt": 1792166797242
+  }
+]

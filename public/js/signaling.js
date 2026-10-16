@@ -180,6 +180,18 @@
           this.emit('group-rekey-received', msg);
           break;
 
+        case 'chat-request-received':
+          this.emit('chat-request-received', msg);
+          break;
+
+        case 'chat-request-updated':
+          this.emit('chat-request-updated', msg);
+          break;
+
+        case 'chat-requests-sync':
+          this.emit('chat-requests-sync', msg);
+          break;
+
         // WebRTC Signaling messages
         case 'rtc-offer':
           await this.handleRtcOffer(msg.from, msg.data);
@@ -194,7 +206,8 @@
           break;
 
         default:
-          console.log('Unhandled signaling message:', msg.type);
+          this.emit(msg.type, msg);
+          console.log('Signaling message:', msg.type);
       }
     }
 

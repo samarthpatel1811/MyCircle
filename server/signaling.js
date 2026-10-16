@@ -1,5 +1,5 @@
 const { WebSocketServer } = require('ws');
-const { verifySessionToken } = require('./auth-routes');
+const { verifySessionToken } = require('./session');
 const usersDirectory = require('./users-directory');
 
 class SignalingServer {
@@ -77,6 +77,23 @@ class SignalingServer {
     // Flush any ephemeral encrypted packets waiting for this user
     this.flushMailbox(user, ws);
     this.flushAcks(user, ws);
+    this.flushChatRequests(user, ws);
+  }
+
+  flushChatRequests(username, ws) {
+    try {
+      const invitationsService = require('./invitations-service');
+      const requests = invitationsService.getRequestsForUser(username);
+      const pendingIncoming = requests.incoming.filter(r => r.status === 'pending');
+      if (pendingIncoming.length > 0 && ws.readyState === 1) {
+        ws.send(JSON.stringify({
+          type: 'chat-requests-sync',
+          requests: pendingIncoming
+        }));
+      }
+    } catch (e) {
+      console.warn('Error flushing chat requests:', e);
+    }
   }
 
   removeUserSocket(username, ws) {

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -7,6 +8,21 @@ const USERS_FILE = path.join(DATA_DIR, 'users.json');
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Secure password hashing with scrypt (NIST / OWASP approved)
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivedKey = crypto.scryptSync(password, salt, 64);
+  return `${salt}:${derivedKey.toString('hex')}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [salt, key] = storedHash.split(':');
+  const keyBuffer = Buffer.from(key, 'hex');
+  const derivedKey = crypto.scryptSync(password, salt, 64);
+  return crypto.timingSafeEqual(keyBuffer, derivedKey);
 }
 
 class UsersDirectory {
@@ -21,11 +37,15 @@ class UsersDirectory {
         const raw = fs.readFileSync(USERS_FILE, 'utf8');
         const list = JSON.parse(raw);
         list.forEach(u => {
-          this.users.set(u.username.toLowerCase(), {
-            ...u,
-            isOnline: false,
-            currentChallenge: null
-          });
+          const cleanUser = (u.username || '').toLowerCase().trim();
+          if (cleanUser) {
+            this.users.set(cleanUser, {
+              ...u,
+              username: cleanUser,
+              isOnline: false,
+              currentChallenge: null
+            });
+          }
         });
       }
     } catch (err) {
@@ -39,6 +59,7 @@ class UsersDirectory {
       const list = Array.from(this.users.values()).map(u => ({
         username: u.username,
         displayName: u.displayName,
+        passwordHash: u.passwordHash || null,
         ecdhPublicKey: u.ecdhPublicKey,
         ecdsaPublicKey: u.ecdsaPublicKey,
         fingerprint: u.fingerprint,
@@ -55,12 +76,75 @@ class UsersDirectory {
 
   getUser(username) {
     if (!username) return null;
-    return this.users.get(username.toLowerCase()) || null;
+    return this.users.get(username.toLowerCase().trim()) || null;
   }
 
   hasUser(username) {
     if (!username) return false;
-    return this.users.has(username.toLowerCase());
+    return this.users.has(username.toLowerCase().trim());
+  }
+
+  registerUserWithPassword({ username, displayName, password, ecdhPublicKey, ecdsaPublicKey, fingerprint }) {
+    const cleanUsername = username.toLowerCase().trim();
+    if (this.users.has(cleanUsername)) {
+      throw new Error(`Username @${cleanUsername} is already taken. Please choose another username.`);
+    }
+
+    if (!password || password.length < 4) {
+      throw new Error('Password must be at least 4 characters long.');
+    }
+
+    const passwordHash = hashPassword(password);
+
+    const record = {
+      username: cleanUsername,
+      displayName: (displayName && displayName.trim()) || cleanUsername,
+      passwordHash,
+      ecdhPublicKey,
+      ecdsaPublicKey,
+      fingerprint,
+      passkeyCredentials: [],
+      pinHash: null,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      isOnline: false,
+      currentChallenge: null
+    };
+
+    this.users.set(cleanUsername, record);
+    this.save();
+    return record;
+  }
+
+  verifyUserCredentials(username, password) {
+    const clean = (username || '').toLowerCase().trim();
+    const user = this.getUser(clean);
+    if (!user) {
+      return { ok: false, reason: 'ACCOUNT_NOT_FOUND' };
+    }
+
+    // 1. Check scrypt password hash
+    if (user.passwordHash) {
+      const valid = verifyPassword(password, user.passwordHash);
+      if (valid) {
+        return { ok: true, user };
+      }
+      return { ok: false, reason: 'INVALID_PASSWORD' };
+    }
+
+    // 2. Check legacy pinHash if user originally created with PIN
+    if (user.pinHash) {
+      const testPinHash = crypto.createHash('sha256').update(password + clean).digest('hex');
+      if (testPinHash === user.pinHash) {
+        // Upgrade user to scrypt password hash seamlessly!
+        user.passwordHash = hashPassword(password);
+        this.save();
+        return { ok: true, user };
+      }
+      return { ok: false, reason: 'INVALID_PASSWORD' };
+    }
+
+    return { ok: false, reason: 'NO_PASSWORD_SET' };
   }
 
   registerUser(userObj) {
@@ -72,6 +156,7 @@ class UsersDirectory {
     const record = {
       username,
       displayName: userObj.displayName || username,
+      passwordHash: userObj.passwordHash || null,
       ecdhPublicKey: userObj.ecdhPublicKey,
       ecdsaPublicKey: userObj.ecdsaPublicKey,
       fingerprint: userObj.fingerprint,
