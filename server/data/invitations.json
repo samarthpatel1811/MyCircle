@@ -47,5 +47,18 @@
     "isRevoked": false,
     "useCount": 0,
     "maxUses": null
+  },
+  {
+    "code": "MC1JOV3B99DT",
+    "creatorUsername": "sam patel",
+    "creatorDisplayName": "Samarth",
+    "type": "direct",
+    "groupId": null,
+    "groupName": null,
+    "createdAt": 1792169429348,
+    "expiresAt": 1792774229348,
+    "isRevoked": false,
+    "useCount": 0,
+    "maxUses": null
   }
 ]
