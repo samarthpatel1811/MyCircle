@@ -188,7 +188,7 @@
   /**
    * Encrypt a message for the group
    */
-  async function encryptGroupMessage(groupId, content, currentAccount) {
+  async function encryptGroupMessage(groupId, content, currentAccount, extra = {}) {
     const convId = `group:${groupId}`;
     const conv = await window.MyCircleStorage.getConversation(convId);
     if (!conv) throw new Error('Group conversation not found');
@@ -203,13 +203,16 @@
     const ecdsaPriv = await window.MyCircleCrypto.importECDSAPrivateKey(currentAccount.jwk.ecdsaPrivate);
 
     const messageData = {
-      id: 'grp_msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      id: extra.id || ('grp_msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
       groupId,
       epoch,
       sender: currentAccount.username,
       senderName: currentAccount.displayName || currentAccount.username,
       content,
-      timestamp: Date.now()
+      timestamp: extra.timestamp || Date.now(),
+      expiresAt: extra.expiresAt || null,
+      ttl: extra.ttl || null,
+      replyTo: extra.replyTo || null
     };
 
     const encrypted = await window.MyCircleCrypto.encryptGroupMessage(groupKey, ecdsaPriv, messageData);
@@ -222,7 +225,8 @@
       senderName: messageData.senderName,
       iv: encrypted.iv,
       ciphertext: encrypted.ciphertext,
-      timestamp: messageData.timestamp
+      timestamp: messageData.timestamp,
+      expiresAt: messageData.expiresAt
     };
   }
 

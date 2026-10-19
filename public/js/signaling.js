@@ -192,6 +192,14 @@
           this.emit('chat-requests-sync', msg);
           break;
 
+        case 'message-reaction':
+          this.emit('message-reaction', msg);
+          break;
+
+        case 'disappearing-setting-changed':
+          this.emit('disappearing-setting-changed', msg);
+          break;
+
         // WebRTC Signaling messages
         case 'rtc-offer':
           await this.handleRtcOffer(msg.from, msg.data);
@@ -422,6 +430,22 @@
         groupId,
         epoch,
         keyDistributionList
+      });
+    }
+
+    sendMessageReaction(data) {
+      return this.send({
+        type: 'message-reaction',
+        sender: this.currentUser,
+        ...data
+      });
+    }
+
+    sendDisappearingSetting(data) {
+      return this.send({
+        type: 'disappearing-setting-changed',
+        sender: this.currentUser,
+        ...data
       });
     }
 

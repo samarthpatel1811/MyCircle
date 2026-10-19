@@ -152,14 +152,29 @@ class SignalingServer {
     const user = username.toLowerCase();
     const packets = this.ephemeralMailbox.get(user);
     if (packets && packets.length > 0) {
-      // Send queued encrypted packets to client
-      packets.forEach(packet => {
+      const now = Date.now();
+      // Send queued encrypted packets or control events to client
+      packets.forEach(item => {
+        // Discard expired messages
+        if (item.expiresAt && now > item.expiresAt) {
+          return;
+        }
+        if (item.packet && item.packet.expiresAt && now > item.packet.expiresAt) {
+          return;
+        }
+
         if (ws.readyState === 1) {
-          ws.send(JSON.stringify({
-            type: 'encrypted-message',
-            packet,
-            fromRelay: true
-          }));
+          if (item.type) {
+            // Already a typed packet (e.g. message-reaction, disappearing-setting-changed, group-rekey)
+            ws.send(JSON.stringify(item));
+          } else {
+            // Standard direct encrypted packet
+            ws.send(JSON.stringify({
+              type: 'encrypted-message',
+              packet: item,
+              fromRelay: true
+            }));
+          }
         }
       });
       // Immediately clear in-memory mailbox (no persistent chat database)
@@ -387,6 +402,86 @@ class SignalingServer {
             this.ephemeralMailbox.get(recipient).push(payload);
           }
         });
+        break;
+      }
+
+      // 8. Message Reactions (Direct & Group)
+      case 'message-reaction': {
+        const { conversationId, messageId, emoji, action, isGroup, memberList, recipient } = msg;
+        if (!messageId || !emoji) return;
+
+        const payload = {
+          type: 'message-reaction',
+          conversationId,
+          messageId,
+          emoji,
+          action: action || 'toggle',
+          sender,
+          timestamp: Date.now()
+        };
+
+        if (isGroup && Array.isArray(memberList)) {
+          memberList.forEach(m => {
+            const member = m.toLowerCase();
+            if (member === sender) return;
+            if (this.isUserOnline(member)) {
+              this.sendToUser(member, payload);
+            } else {
+              if (!this.ephemeralMailbox.has(member)) {
+                this.ephemeralMailbox.set(member, []);
+              }
+              this.ephemeralMailbox.get(member).push(payload);
+            }
+          });
+        } else if (recipient) {
+          const rec = recipient.toLowerCase();
+          if (this.isUserOnline(rec)) {
+            this.sendToUser(rec, payload);
+          } else {
+            if (!this.ephemeralMailbox.has(rec)) {
+              this.ephemeralMailbox.set(rec, []);
+            }
+            this.ephemeralMailbox.get(rec).push(payload);
+          }
+        }
+        break;
+      }
+
+      // 9. Disappearing Messages Setting Changed
+      case 'disappearing-setting-changed': {
+        const { conversationId, ttl, isGroup, memberList, recipient } = msg;
+        const payload = {
+          type: 'disappearing-setting-changed',
+          conversationId,
+          ttl: Number(ttl) || 0,
+          sender,
+          timestamp: Date.now()
+        };
+
+        if (isGroup && Array.isArray(memberList)) {
+          memberList.forEach(m => {
+            const member = m.toLowerCase();
+            if (member === sender) return;
+            if (this.isUserOnline(member)) {
+              this.sendToUser(member, payload);
+            } else {
+              if (!this.ephemeralMailbox.has(member)) {
+                this.ephemeralMailbox.set(member, []);
+              }
+              this.ephemeralMailbox.get(member).push(payload);
+            }
+          });
+        } else if (recipient) {
+          const rec = recipient.toLowerCase();
+          if (this.isUserOnline(rec)) {
+            this.sendToUser(rec, payload);
+          } else {
+            if (!this.ephemeralMailbox.has(rec)) {
+              this.ephemeralMailbox.set(rec, []);
+            }
+            this.ephemeralMailbox.get(rec).push(payload);
+          }
+        }
         break;
       }
 

@@ -58,6 +58,30 @@
   const btnVerifySafety = document.getElementById('btn-verify-safety');
   const btnGroupManage = document.getElementById('btn-group-manage');
 
+  // DOM Elements - New Feature Badges & Elements
+  const headerVerifiedBadge = document.getElementById('header-verified-badge');
+  const btnChatDisappearing = document.getElementById('btn-chat-disappearing');
+  const headerDisappearingBadge = document.getElementById('header-disappearing-badge');
+  const securityWarningBanner = document.getElementById('security-warning-banner');
+  const securityWarningDesc = document.getElementById('security-warning-desc');
+  const btnBannerVerify = document.getElementById('btn-banner-verify');
+  const replyPreviewBar = document.getElementById('reply-preview-bar');
+  const replyPreviewSender = document.getElementById('reply-preview-sender');
+  const replyPreviewSnippet = document.getElementById('reply-preview-snippet');
+  const btnCancelReply = document.getElementById('btn-cancel-reply');
+  const btnSaveDisappearing = document.getElementById('btn-save-disappearing');
+  const safetyStatusPill = document.getElementById('safety-status-pill');
+  const safetyQrCanvas = document.getElementById('safety-qr-canvas');
+  const inputCompareSafety = document.getElementById('input-compare-safety');
+  const btnCompareSafety = document.getElementById('btn-compare-safety');
+  const safetyCompareResult = document.getElementById('safety-compare-result');
+  const checkMarkVerified = document.getElementById('check-mark-verified');
+
+  // State variables for new features
+  let activeReply = null;
+  let activePopoverMsgId = null;
+  const COMMON_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+
   // DOM Elements - Messages & Input
   const messagesScroll = document.getElementById('messages-scroll');
   const typingIndicator = document.getElementById('typing-indicator');
@@ -127,6 +151,49 @@
   function formatMemberCount(count) {
     const n = Math.max(0, count || 0);
     return `${n} ${n === 1 ? 'member' : 'members'}`;
+  }
+
+  function formatTtl(ms) {
+    if (!ms || ms <= 0) return 'Off';
+    const hours = Math.round(ms / 3600000);
+    if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''}`;
+    const days = Math.round(ms / 86400000);
+    return `${days} day${days > 1 ? 's' : ''}`;
+  }
+
+  function formatTtlShort(ms) {
+    if (!ms || ms <= 0) return '';
+    const hours = Math.round(ms / 3600000);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.round(ms / 86400000);
+    return `${days}d`;
+  }
+
+  function formatRemainingTime(ms) {
+    if (ms <= 0) return 'expired';
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ${mins % 60}m`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ${hours % 24}h`;
+  }
+
+  function renderReactionsHtml(messageId, reactions) {
+    if (!reactions || typeof reactions !== 'object') return '';
+    const myUser = (currentAccount ? currentAccount.username : '').toLowerCase();
+    let pills = '';
+    for (const [emoji, users] of Object.entries(reactions)) {
+      if (!Array.isArray(users) || users.length === 0) continue;
+      const isMine = users.some(u => (u || '').toLowerCase() === myUser);
+      pills += `
+        <span class="reaction-pill ${isMine ? 'active' : ''}" onclick="window.toggleReaction('${messageId}', '${emoji}')" title="${users.join(', ')}">
+          <span>${emoji}</span>
+          <span class="reaction-count">${users.length}</span>
+        </span>
+      `;
+    }
+    return pills;
   }
 
   // ==========================================================================
@@ -427,11 +494,20 @@
       myStatusDot.className = 'status-dot online';
       networkPill.textContent = 'Connected (E2EE Active)';
       networkPill.style.color = 'var(--color-online)';
+      drainOutbox();
     } else {
       myStatusDot.className = 'status-dot';
       networkPill.textContent = 'Offline (Local Only)';
       networkPill.style.color = 'var(--text-muted)';
     }
+  });
+
+  window.addEventListener('online', () => {
+    drainOutbox();
+  });
+
+  window.MyCircleSignaling.on('auth-success', () => {
+    drainOutbox();
   });
 
   window.MyCircleSignaling.on('presence', ({ username, isOnline }) => {
@@ -459,6 +535,14 @@
   window.MyCircleSignaling.on('encrypted-message-received', async (packet) => {
     try {
       const sender = packet.sender.toLowerCase();
+
+      // Deduplication check: ignore if already stored locally
+      const existingMsg = await window.MyCircleStorage.getMessageById(packet.id);
+      if (existingMsg) {
+        window.MyCircleSignaling.sendDeliveryAck(packet.id, sender);
+        return;
+      }
+
       // Ensure sender contact exists
       let contact = await window.MyCircleStorage.getContact(sender);
       if (!contact) {
@@ -477,6 +561,32 @@
         return;
       }
 
+      // Key Change Detection: compare verified fingerprint with incoming public key
+      if (contact.verifiedFingerprint) {
+        const currentFp = `${contact.ecdhPublicKey.x}:${contact.ecdhPublicKey.y}`;
+        if (contact.verifiedFingerprint !== currentFp) {
+          contact.keyChanged = true;
+          contact.isVerified = false;
+          await window.MyCircleStorage.saveContact(contact);
+
+          const alertMsg = {
+            id: 'sys_kc_' + Date.now(),
+            conversationId: `direct:${sender}`,
+            sender: 'system',
+            content: `⚠️ Security Warning: @${sender}'s cryptographic identity key changed! Please verify safety numbers again.`,
+            timestamp: Date.now(),
+            isSystem: true
+          };
+          await window.MyCircleStorage.saveMessage(alertMsg);
+
+          if (activeConversation && activeConversation.id === `direct:${sender}`) {
+            if (securityWarningBanner) securityWarningBanner.style.display = 'block';
+            if (securityWarningDesc) securityWarningDesc.textContent = `@${sender}'s cryptographic key changed! Verify safety numbers to re-secure this conversation.`;
+            if (headerVerifiedBadge) headerVerifiedBadge.style.display = 'none';
+          }
+        }
+      }
+
       // 1. Derive pairwise key
       const localPriv = await window.MyCircleCrypto.importECDHPrivateKey(currentAccount.jwk.ecdhPrivate);
       const remotePub = await window.MyCircleCrypto.importECDHPublicKey(contact.ecdhPublicKey);
@@ -485,6 +595,13 @@
       // 2. Decrypt & verify digital signature
       const senderEcdsaPub = await window.MyCircleCrypto.importECDSAPublicKey(contact.ecdsaPublicKey);
       const decrypted = await window.MyCircleCrypto.decryptDirectMessage(sharedKey, senderEcdsaPub, packet.iv, packet.ciphertext);
+
+      // Check if message has already expired
+      const expiresAt = decrypted.payload.expiresAt || packet.expiresAt;
+      if (expiresAt && Date.now() > Number(expiresAt)) {
+        window.MyCircleSignaling.sendDeliveryAck(packet.id, sender);
+        return; // Discard expired message
+      }
 
       const convId = `direct:${sender}`;
 
@@ -510,10 +627,14 @@
         senderName: contact.displayName || sender,
         recipient: currentAccount.username,
         content: decrypted.payload.content,
-        timestamp: packet.timestamp || Date.now(),
+        timestamp: packet.timestamp || decrypted.payload.timestamp || Date.now(),
         status: 'delivered',
         isOutgoing: false,
-        isVerified: decrypted.isVerified
+        isVerified: decrypted.isVerified,
+        expiresAt: expiresAt || null,
+        ttl: decrypted.payload.ttl || null,
+        replyTo: decrypted.payload.replyTo || null,
+        reactions: {}
       };
 
       await window.MyCircleStorage.saveMessage(msgRecord);
@@ -536,7 +657,18 @@
   // Handle Incoming Group Encrypted Message
   window.MyCircleSignaling.on('group-encrypted-message-received', async (packet) => {
     try {
+      // Deduplication check
+      const existing = await window.MyCircleStorage.getMessageById(packet.id);
+      if (existing) return;
+
       const decrypted = await window.MyCircleGroupCrypto.decryptGroupMessage(packet, currentAccount);
+
+      // Check expiration
+      const expiresAt = decrypted.payload.expiresAt || packet.expiresAt;
+      if (expiresAt && Date.now() > Number(expiresAt)) {
+        return; // Discard expired
+      }
+
       const convId = `group:${packet.groupId}`;
 
       let conv = await window.MyCircleStorage.getConversation(convId);
@@ -561,10 +693,14 @@
         sender: packet.sender,
         senderName: packet.senderName || packet.sender,
         content: decrypted.payload.content,
-        timestamp: packet.timestamp || Date.now(),
+        timestamp: packet.timestamp || decrypted.payload.timestamp || Date.now(),
         status: 'delivered',
         isOutgoing: false,
-        isVerified: decrypted.isVerified
+        isVerified: decrypted.isVerified,
+        expiresAt: expiresAt || null,
+        ttl: decrypted.payload.ttl || null,
+        replyTo: decrypted.payload.replyTo || null,
+        reactions: {}
       };
 
       await window.MyCircleStorage.saveMessage(msgRecord);
@@ -587,6 +723,67 @@
       showToast(`Circle security key updated to Epoch ${packet.epoch}`);
     } catch (err) {
       console.error('Error handling group rekey:', err);
+    }
+  });
+
+  // Real-time Message Reactions
+  window.MyCircleSignaling.on('message-reaction', async (msg) => {
+    try {
+      const updated = await window.MyCircleStorage.updateMessageReactions(
+        msg.messageId,
+        msg.emoji,
+        msg.sender,
+        msg.action
+      );
+      const container = document.getElementById(`reactions-${msg.messageId}`);
+      if (container) {
+        container.innerHTML = renderReactionsHtml(msg.messageId, updated);
+      }
+    } catch (err) {
+      console.warn('Error handling reaction event:', err);
+    }
+  });
+
+  // Real-time Disappearing Messages Setting Changed
+  window.MyCircleSignaling.on('disappearing-setting-changed', async (msg) => {
+    try {
+      let conv = await window.MyCircleStorage.getConversation(msg.conversationId);
+      const ttl = Number(msg.ttl) || 0;
+      if (conv) {
+        conv.disappearingTtl = ttl;
+        await window.MyCircleStorage.saveConversation(conv);
+      }
+
+      const senderName = msg.sender === currentAccount.username ? 'You' : `@${msg.sender}`;
+      const notice = ttl > 0
+        ? `⏱️ ${senderName} set disappearing messages to ${formatTtl(ttl)}.`
+        : `⏱️ ${senderName} turned off disappearing messages.`;
+
+      const sysMsg = {
+        id: 'sys_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        conversationId: msg.conversationId,
+        sender: 'system',
+        content: notice,
+        timestamp: msg.timestamp || Date.now(),
+        isSystem: true
+      };
+      await window.MyCircleStorage.saveMessage(sysMsg);
+
+      if (activeConversation && activeConversation.id === msg.conversationId) {
+        activeConversation.disappearingTtl = ttl;
+        if (headerDisappearingBadge) {
+          if (ttl > 0) {
+            headerDisappearingBadge.textContent = formatTtlShort(ttl);
+            headerDisappearingBadge.style.display = 'inline-block';
+          } else {
+            headerDisappearingBadge.style.display = 'none';
+          }
+        }
+        appendMessageBubble(sysMsg);
+      }
+      await loadConversations();
+    } catch (err) {
+      console.warn('Error handling disappearing setting event:', err);
     }
   });
 
@@ -658,6 +855,7 @@
     await window.MyCircleStorage.updateMessageStatus(messageId, status);
     const tickEl = document.getElementById(`tick-${messageId}`);
     if (tickEl && !tickEl.classList.contains('delivered')) {
+      tickEl.className = 'delivery-tick';
       tickEl.innerHTML = '✓';
       tickEl.title = 'Sent to relay';
     }
@@ -743,6 +941,10 @@
     conv.unreadCount = 0;
     await window.MyCircleStorage.saveConversation(conv);
 
+    // Reset active reply bar
+    activeReply = null;
+    if (replyPreviewBar) replyPreviewBar.style.display = 'none';
+
     // Responsive Mobile layout: slide in chat pane
     document.querySelector('.app-layout').classList.add('conversation-open');
 
@@ -760,12 +962,26 @@
     const titleSpan = activeChatName.querySelector('span') || activeChatName;
     titleSpan.textContent = conv.name || (isGroup ? 'Circle Group' : `@${conv.peerUsername}`);
 
+    // Update Disappearing Messages Badge in Header
+    const ttl = conv.disappearingTtl || 0;
+    if (headerDisappearingBadge) {
+      if (ttl > 0) {
+        headerDisappearingBadge.textContent = formatTtlShort(ttl);
+        headerDisappearingBadge.style.display = 'inline-block';
+        headerDisappearingBadge.title = `Disappearing messages active: ${formatTtl(ttl)}`;
+      } else {
+        headerDisappearingBadge.style.display = 'none';
+      }
+    }
+
     if (isGroup) {
       activeStatusDot.style.display = 'none';
       const count = Array.isArray(conv.members) ? conv.members.length : 1;
       activeStatusText.textContent = `${formatMemberCount(count)} • End-to-End Encrypted`;
       btnGroupManage.style.display = 'flex';
       btnVerifySafety.style.display = 'none';
+      if (headerVerifiedBadge) headerVerifiedBadge.style.display = 'none';
+      if (securityWarningBanner) securityWarningBanner.style.display = 'none';
     } else {
       activeStatusDot.style.display = 'inline-block';
       const isOnline = window.MyCircleSignaling.isPeerOnline(conv.peerUsername || '');
@@ -773,6 +989,27 @@
       activeStatusText.textContent = isOnline ? 'Online • End-to-End Encrypted' : 'Offline • Local IndexedDB';
       btnGroupManage.style.display = 'none';
       btnVerifySafety.style.display = 'flex';
+
+      // Update Verified Badge and Key-Change Warning Banner
+      const peer = (conv.peerUsername || '').toLowerCase();
+      const contact = await window.MyCircleStorage.getContact(peer);
+      if (contact) {
+        if (contact.keyChanged) {
+          if (securityWarningBanner) securityWarningBanner.style.display = 'block';
+          if (securityWarningDesc) {
+            securityWarningDesc.textContent = `@${peer}'s cryptographic key changed! Verify safety numbers to re-secure this conversation.`;
+          }
+          if (headerVerifiedBadge) headerVerifiedBadge.style.display = 'none';
+        } else {
+          if (securityWarningBanner) securityWarningBanner.style.display = 'none';
+          if (headerVerifiedBadge) {
+            headerVerifiedBadge.style.display = contact.isVerified ? 'inline-flex' : 'none';
+          }
+        }
+      } else {
+        if (securityWarningBanner) securityWarningBanner.style.display = 'none';
+        if (headerVerifiedBadge) headerVerifiedBadge.style.display = 'none';
+      }
 
       // Attempt P2P DataChannel connection in background
       if (isOnline) {
@@ -797,6 +1034,13 @@
   if (btnMobileBack) {
     btnMobileBack.addEventListener('click', () => {
       document.querySelector('.app-layout').classList.remove('conversation-open');
+    });
+  }
+
+  // Security warning banner verify button
+  if (btnBannerVerify) {
+    btnBannerVerify.addEventListener('click', () => {
+      if (btnVerifySafety) btnVerifySafety.click();
     });
   }
 
@@ -836,7 +1080,7 @@
     const members = Array.isArray(activeConversation.members) ? activeConversation.members : [];
     // Deduplicate members
     const uniqueMembers = Array.from(new Set(members.map(m => m.toLowerCase())));
-    if (memberCountEl) memberCountEl.textContent = formatMemberCount(uniqueMembers.length);
+    if (memberCountEl) memberCountEl.textContent = `${formatMemberCount(uniqueMembers.length)} • Epoch ${activeConversation.epoch || 1}`;
 
     await renderGroupMembersList(uniqueMembers);
   }
@@ -870,6 +1114,8 @@
 
       const displayName = (contact && contact.displayName) || memberUsername;
       const initial = displayName.charAt(0).toUpperCase();
+      const isVerified = contact && contact.isVerified;
+      const verifiedTag = isVerified ? '<span title="Identity Verified" style="font-size: 0.8rem; vertical-align: middle;">🛡️</span>' : '';
 
       const item = document.createElement('div');
       item.className = 'group-member-item';
@@ -879,6 +1125,7 @@
         <div class="group-member-info" style="flex: 1;">
           <div style="font-weight: 600; font-size: 0.88rem; color: var(--text-main); display: flex; align-items: center; gap: 0.4rem;">
             <span>${escapeHTML(displayName)}</span>
+            ${verifiedTag}
             ${memberUsername === activeConversation.admin ? '<span class="auth-e2e-badge" style="font-size: 0.65rem; padding: 1px 6px;">Admin</span>' : ''}
             ${isSelf ? '<span style="font-size: 0.75rem; color: var(--text-muted);">(You)</span>' : ''}
           </div>
@@ -1570,8 +1817,12 @@
   // ==========================================================================
   // Messages Area & Bubble Rendering
   // ==========================================================================
+  // Messages Area & Bubble Rendering
+  // ==========================================================================
   async function loadMessages(conversationId) {
     messagesScroll.innerHTML = '';
+    // Clean expired messages before loading
+    await window.MyCircleStorage.cleanupExpiredMessages();
     const messages = await window.MyCircleStorage.getMessages(conversationId);
 
     let lastDate = null;
@@ -1604,6 +1855,17 @@
     row.className = `message-row ${msg.isOutgoing ? 'outgoing' : 'incoming'}`;
     row.id = `bubble-${msg.id}`;
 
+    // Mobile tap support: tapping bubble toggles action bar
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.message-actions-bar') || e.target.closest('.emoji-picker-popover') || e.target.closest('.reaction-pill') || e.target.closest('.message-reply-quote')) {
+        return;
+      }
+      document.querySelectorAll('.message-row.action-open').forEach(r => {
+        if (r !== row) r.classList.remove('action-open');
+      });
+      row.classList.toggle('action-open');
+    });
+
     let tickHtml = '';
     if (msg.isOutgoing) {
       if (msg.status === 'delivered') {
@@ -1622,14 +1884,54 @@
       ? `<span class="message-sender-tag">${escapeHTML(msg.senderName || msg.sender)}</span>`
       : '';
 
+    // Quoted reply HTML if message is a reply
+    let replyQuoteHtml = '';
+    if (msg.replyTo) {
+      replyQuoteHtml = `
+        <div class="message-reply-quote" onclick="window.jumpToMessage('${escapeHTML(msg.replyTo.id)}')">
+          <div class="message-reply-quote-sender">${escapeHTML(msg.replyTo.senderName || msg.replyTo.sender)}</div>
+          <div class="message-reply-quote-text">${escapeHTML(msg.replyTo.snippet || '')}</div>
+        </div>
+      `;
+    }
+
+    // Disappearing timer icon if message expires
+    let timerHtml = '';
+    if (msg.expiresAt) {
+      const remainingMs = Math.max(0, msg.expiresAt - Date.now());
+      const remainingStr = formatRemainingTime(remainingMs);
+      timerHtml = `<span class="disappearing-timer-indicator" title="Disappearing message: expires in ${remainingStr}">⏱️</span>`;
+    }
+
+    // Reaction pills beneath bubble
+    const reactionsHtml = renderReactionsHtml(msg.id, msg.reactions);
+
+    // Message action buttons (Reply, React)
+    const actionsBarHtml = `
+      <div class="message-actions-bar">
+        <button type="button" class="message-action-btn" onclick="window.setReplyMessage('${msg.id}')" title="Reply">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>
+        </button>
+        <button type="button" class="message-action-btn" onclick="window.toggleEmojiPicker('${msg.id}', event)" title="React with emoji">
+          😊
+        </button>
+      </div>
+    `;
+
     row.innerHTML = `
       ${senderTag}
-      <div class="message-bubble">
-        <div class="message-text">${escapeHTML(msg.content)}</div>
-        <div class="message-meta">
-          <span>${formatTime(msg.timestamp)}</span>
-          ${tickHtml}
+      <div class="message-bubble-wrapper">
+        ${actionsBarHtml}
+        <div class="message-bubble">
+          ${replyQuoteHtml}
+          <div class="message-text">${escapeHTML(msg.content)}</div>
+          <div class="message-meta">
+            ${timerHtml}
+            <span>${formatTime(msg.timestamp)}</span>
+            ${tickHtml}
+          </div>
         </div>
+        <div id="reactions-${msg.id}" class="reaction-pills">${reactionsHtml}</div>
       </div>
       ${msg.status === 'failed' ? `<div class="message-failed-action" onclick="window.retryMessage('${msg.id}')">Failed. Tap to retry</div>` : ''}
     `;
@@ -1641,6 +1943,215 @@
   function scrollToBottom() {
     if (messagesScroll) {
       messagesScroll.scrollTop = messagesScroll.scrollHeight;
+    }
+  }
+
+  // ==========================================================================
+  // Reply & Reaction Global Handlers
+  // ==========================================================================
+  window.setReplyMessage = async function (msgId) {
+    const msg = await window.MyCircleStorage.getMessageById(msgId);
+    if (!msg) return;
+
+    activeReply = {
+      id: msg.id,
+      sender: msg.sender,
+      senderName: msg.senderName || msg.sender,
+      snippet: (msg.content || '').slice(0, 80)
+    };
+
+    if (replyPreviewSender) replyPreviewSender.textContent = activeReply.senderName;
+    if (replyPreviewSnippet) replyPreviewSnippet.textContent = activeReply.snippet;
+    if (replyPreviewBar) replyPreviewBar.style.display = 'flex';
+    if (messageInput) messageInput.focus();
+  };
+
+  if (btnCancelReply) {
+    btnCancelReply.addEventListener('click', () => {
+      activeReply = null;
+      if (replyPreviewBar) replyPreviewBar.style.display = 'none';
+    });
+  }
+
+  window.jumpToMessage = function (msgId) {
+    const bubble = document.getElementById(`bubble-${msgId}`);
+    if (bubble) {
+      bubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      bubble.classList.remove('message-highlight');
+      void bubble.offsetWidth;
+      bubble.classList.add('message-highlight');
+      setTimeout(() => bubble.classList.remove('message-highlight'), 1700);
+    } else {
+      showToast('Original message has expired or is no longer available.');
+    }
+  };
+
+  window.toggleEmojiPicker = function (msgId, event) {
+    if (event) event.stopPropagation();
+    const existing = document.querySelector('.emoji-picker-popover');
+    if (existing) {
+      const parent = existing.closest('.message-row');
+      if (parent) parent.classList.remove('action-open');
+      existing.remove();
+      if (activePopoverMsgId === msgId) {
+        activePopoverMsgId = null;
+        return;
+      }
+    }
+
+    const row = document.getElementById(`bubble-${msgId}`);
+    if (!row) return;
+
+    row.classList.add('action-open');
+    activePopoverMsgId = msgId;
+
+    const popover = document.createElement('div');
+    popover.className = 'emoji-picker-popover';
+    COMMON_EMOJIS.forEach(emoji => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'emoji-btn';
+      btn.textContent = emoji;
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        window.toggleReaction(msgId, emoji);
+        popover.remove();
+        row.classList.remove('action-open');
+        activePopoverMsgId = null;
+      };
+      popover.appendChild(btn);
+    });
+
+    const wrapper = row.querySelector('.message-bubble-wrapper') || row;
+    wrapper.appendChild(popover);
+  };
+
+  window.toggleReaction = async function (msgId, emoji) {
+    if (!currentAccount) return;
+    const isGroup = activeConversation && activeConversation.type === 'group';
+    const updated = await window.MyCircleStorage.updateMessageReactions(
+      msgId,
+      emoji,
+      currentAccount.username,
+      'toggle'
+    );
+
+    const container = document.getElementById(`reactions-${msgId}`);
+    if (container) {
+      container.innerHTML = renderReactionsHtml(msgId, updated);
+    }
+
+    if (activeConversation) {
+      window.MyCircleSignaling.sendMessageReaction({
+        conversationId: activeConversation.id,
+        messageId: msgId,
+        emoji,
+        action: 'toggle',
+        isGroup,
+        memberList: isGroup ? activeConversation.members : null,
+        recipient: isGroup ? null : activeConversation.peerUsername
+      });
+    }
+  };
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.emoji-picker-popover') && !e.target.closest('.message-action-btn')) {
+      const existing = document.querySelector('.emoji-picker-popover');
+      if (existing) {
+        const parent = existing.closest('.message-row');
+        if (parent) parent.classList.remove('action-open');
+        existing.remove();
+        activePopoverMsgId = null;
+      }
+    }
+  });
+
+  // ==========================================================================
+  // Reliable Offline Outbox Drainer
+  // ==========================================================================
+  async function drainOutbox() {
+    if (!window.MyCircleSignaling.isConnected || !currentAccount) return;
+    try {
+      const pending = await window.MyCircleStorage.getPendingMessages();
+      if (!pending || pending.length === 0) return;
+
+      for (const msg of pending) {
+        try {
+          const conv = await window.MyCircleStorage.getConversation(msg.conversationId);
+          if (!conv) continue;
+
+          if (conv.type === 'group') {
+            const groupPacket = await window.MyCircleGroupCrypto.encryptGroupMessage(
+              conv.groupId,
+              msg.content,
+              currentAccount,
+              { id: msg.id, timestamp: msg.timestamp, expiresAt: msg.expiresAt, ttl: msg.ttl, replyTo: msg.replyTo }
+            );
+            groupPacket.expiresAt = msg.expiresAt;
+            window.MyCircleSignaling.sendGroupEncryptedPacket(groupPacket, conv.members);
+            await window.MyCircleStorage.updateMessageStatus(msg.id, 'sent');
+          } else {
+            const peer = conv.peerUsername.toLowerCase();
+            let contact = await window.MyCircleStorage.getContact(peer);
+            if (!contact || !contact.ecdhPublicKey) {
+              const res = await fetch(`/api/auth/users/${peer}`);
+              if (res.ok) {
+                const data = await res.json();
+                if (data.user) {
+                  contact = data.user;
+                  await window.MyCircleStorage.saveContact(contact);
+                }
+              }
+            }
+            if (!contact || !contact.ecdhPublicKey) continue;
+
+            const localPriv = await window.MyCircleCrypto.importECDHPrivateKey(currentAccount.jwk.ecdhPrivate);
+            const remotePub = await window.MyCircleCrypto.importECDHPublicKey(contact.ecdhPublicKey);
+            const sharedKey = await window.MyCircleCrypto.derivePairwiseKey(localPriv, remotePub);
+            const ecdsaPriv = await window.MyCircleCrypto.importECDSAPrivateKey(currentAccount.jwk.ecdsaPrivate);
+
+            const encrypted = await window.MyCircleCrypto.encryptDirectMessage(sharedKey, ecdsaPriv, {
+              id: msg.id,
+              sender: currentAccount.username,
+              recipient: peer,
+              content: msg.content,
+              timestamp: msg.timestamp,
+              expiresAt: msg.expiresAt,
+              ttl: msg.ttl,
+              replyTo: msg.replyTo
+            });
+
+            const packet = {
+              id: msg.id,
+              recipient: peer,
+              sender: currentAccount.username,
+              iv: encrypted.iv,
+              ciphertext: encrypted.ciphertext,
+              timestamp: msg.timestamp,
+              expiresAt: msg.expiresAt
+            };
+
+            await window.MyCircleSignaling.sendEncryptedPacket(packet);
+            await window.MyCircleStorage.updateMessageStatus(msg.id, 'sent');
+          }
+
+          const tickEl = document.getElementById(`tick-${msg.id}`);
+          if (tickEl && !tickEl.classList.contains('delivered')) {
+            tickEl.className = 'delivery-tick';
+            tickEl.innerHTML = '✓';
+            tickEl.title = 'Sent to relay';
+          }
+          const row = document.getElementById(`bubble-${msg.id}`);
+          if (row) {
+            const failedAction = row.querySelector('.message-failed-action');
+            if (failedAction) failedAction.remove();
+          }
+        } catch (err) {
+          console.warn(`Outbox retry for msg ${msg.id} failed:`, err);
+        }
+      }
+    } catch (e) {
+      console.warn('Drain outbox error:', e);
     }
   }
 
@@ -1659,6 +2170,15 @@
     const timestamp = Date.now();
     const isGroup = activeConversation.type === 'group';
 
+    // Disappearing expiration timestamp
+    const ttl = activeConversation.disappearingTtl || 0;
+    const expiresAt = ttl > 0 ? (timestamp + ttl) : null;
+
+    // Attach quoted reply if active
+    const replyTo = activeReply ? { ...activeReply } : null;
+    activeReply = null;
+    if (replyPreviewBar) replyPreviewBar.style.display = 'none';
+
     // Create local message record
     const msgRecord = {
       id: messageId,
@@ -1669,7 +2189,11 @@
       content: text,
       timestamp,
       status: 'sending',
-      isOutgoing: true
+      isOutgoing: true,
+      expiresAt,
+      ttl: ttl || null,
+      replyTo,
+      reactions: {}
     };
 
     // Save immediately to local IndexedDB
@@ -1677,14 +2201,23 @@
     appendMessageBubble(msgRecord);
     await loadConversations();
 
+    // If device is currently offline, leave as 'sending' in outbox and inform user
+    if (!window.MyCircleSignaling.isConnected) {
+      btnSendMessage.disabled = false;
+      showToast('Offline. Message queued and will send automatically when connected.');
+      return;
+    }
+
     try {
       if (isGroup) {
         // Group Encryption
         const groupPacket = await window.MyCircleGroupCrypto.encryptGroupMessage(
           activeConversation.groupId,
           text,
-          currentAccount
+          currentAccount,
+          { id: messageId, timestamp, expiresAt, ttl, replyTo }
         );
+        groupPacket.expiresAt = expiresAt;
 
         window.MyCircleSignaling.sendGroupEncryptedPacket(groupPacket, activeConversation.members);
         await window.MyCircleStorage.updateMessageStatus(messageId, 'sent');
@@ -1719,7 +2252,10 @@
           sender: currentAccount.username,
           recipient: peer,
           content: text,
-          timestamp
+          timestamp,
+          expiresAt,
+          ttl,
+          replyTo
         });
 
         const packet = {
@@ -1728,7 +2264,8 @@
           sender: currentAccount.username,
           iv: encrypted.iv,
           ciphertext: encrypted.ciphertext,
-          timestamp
+          timestamp,
+          expiresAt
         };
 
         // Send via hybrid P2P DataChannel / Ephemeral Relay
@@ -1746,38 +2283,29 @@
     }
   }
 
-  btnSendMessage.addEventListener('click', sendMessage);
-  messageInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  });
-
-  // Typing state dispatch
-  messageInput.addEventListener('input', () => {
-    if (!activeConversation || activeConversation.type === 'group') return;
-    if (!isTyping) {
-      isTyping = true;
-      window.MyCircleSignaling.sendTyping(activeConversation.peerUsername, true);
-    }
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-      isTyping = false;
-      window.MyCircleSignaling.sendTyping(activeConversation.peerUsername, false);
-    }, 1800);
-  });
-
-  // Global Retry Message Handler
+  // Global Retry Message Handler (Does NOT duplicate message!)
   window.retryMessage = async function (msgId) {
-    if (!activeConversation) return;
-    const messages = await window.MyCircleStorage.getMessages(activeConversation.id);
-    const msg = messages.find(m => m.id === msgId);
+    if (!currentAccount) return;
+    const msg = await window.MyCircleStorage.getMessageById(msgId);
     if (!msg) return;
 
-    messageInput.value = msg.content;
     await window.MyCircleStorage.updateMessageStatus(msgId, 'sending');
-    sendMessage();
+    const tickEl = document.getElementById(`tick-${msgId}`);
+    if (tickEl) {
+      tickEl.className = 'delivery-tick';
+      tickEl.innerHTML = '⏳';
+      tickEl.title = 'Sending...';
+    }
+
+    if (!window.MyCircleSignaling.isConnected) {
+      showToast('Still offline. Message is queued to send on reconnect.');
+      return;
+    }
+
+    await drainOutbox();
+    if (activeConversation) {
+      await loadMessages(activeConversation.id);
+    }
   };
 
   // ==========================================================================
@@ -1850,13 +2378,15 @@
   // ==========================================================================
   // Safety Numbers Verification Modal
   // ==========================================================================
+  // Chat Security Verification Modal
+  // ==========================================================================
   if (btnVerifySafety) {
     btnVerifySafety.addEventListener('click', async () => {
       if (!activeConversation || activeConversation.type === 'group') return;
       openModal('modal-safety');
 
       const peer = activeConversation.peerUsername.toLowerCase();
-      const contact = await window.MyCircleStorage.getContact(peer);
+      let contact = await window.MyCircleStorage.getContact(peer);
       if (!contact || !contact.ecdhPublicKey) {
         showToast('Public keys not yet exchanged for this contact.');
         return;
@@ -1867,24 +2397,196 @@
         contact.ecdhPublicKey
       );
 
+      // Render 60 digits grid
       const grid = document.getElementById('safety-numbers-container');
-      grid.innerHTML = '';
-      safety.groups.forEach(chunk => {
-        const div = document.createElement('div');
-        div.className = 'safety-chunk';
-        div.textContent = chunk;
-        grid.appendChild(div);
-      });
+      if (grid) {
+        grid.innerHTML = '';
+        safety.groups.forEach(chunk => {
+          const div = document.createElement('div');
+          div.className = 'safety-chunk';
+          div.textContent = chunk;
+          grid.appendChild(div);
+        });
+      }
 
-      const check = document.getElementById('check-mark-verified');
-      check.checked = !!contact.isVerified;
+      // Render Visual QR Code on Canvas
+      if (safetyQrCanvas && window.QRCode && window.QRCode.toCanvas) {
+        const qrContent = `mycircle:verify:v1:${safety.groups.join('')}:${currentAccount.username}:${peer}`;
+        try {
+          window.QRCode.toCanvas(safetyQrCanvas, qrContent, {
+            width: 180,
+            margin: 1,
+            color: { dark: '#1B4332', light: '#FFFFFF' }
+          }, (err) => {
+            if (err) console.error('QR rendering error:', err);
+          });
+        } catch (e) {
+          console.error('Error drawing safety QR code:', e);
+        }
+      }
 
-      check.onchange = async () => {
-        await window.MyCircleStorage.markContactVerified(peer, check.checked);
-        showToast(check.checked ? 'Marked as verified!' : 'Verification badge removed');
+      // Status Pill update helper
+      const updateStatusPill = (isVerified) => {
+        if (!safetyStatusPill) return;
+        if (isVerified) {
+          safetyStatusPill.className = 'safety-status-pill verified';
+          safetyStatusPill.textContent = 'Verified 🛡️';
+        } else {
+          safetyStatusPill.className = 'safety-status-pill unverified';
+          safetyStatusPill.textContent = 'Not Verified';
+        }
       };
+      updateStatusPill(!!contact.isVerified);
+
+      // Checkbox handler
+      if (checkMarkVerified) {
+        checkMarkVerified.checked = !!contact.isVerified;
+        checkMarkVerified.onchange = async () => {
+          const isV = checkMarkVerified.checked;
+          await window.MyCircleStorage.markContactVerified(peer, isV, safety.fingerprintShort);
+          contact.isVerified = isV;
+          if (isV) {
+            contact.keyChanged = false;
+            if (securityWarningBanner) securityWarningBanner.style.display = 'none';
+          }
+          if (headerVerifiedBadge) {
+            headerVerifiedBadge.style.display = isV ? 'inline-flex' : 'none';
+          }
+          updateStatusPill(isV);
+          showToast(isV ? 'Marked as verified! 🛡️' : 'Verification badge removed');
+        };
+      }
+
+      // Interactive Safety Code Comparison Tool
+      if (inputCompareSafety) inputCompareSafety.value = '';
+      if (safetyCompareResult) {
+        safetyCompareResult.style.display = 'none';
+        safetyCompareResult.className = 'safety-compare-result';
+        safetyCompareResult.textContent = '';
+      }
+
+      const handleCompare = () => {
+        if (!inputCompareSafety || !safetyCompareResult) return;
+        const val = inputCompareSafety.value.replace(/[^0-9]/g, '');
+        const target = safety.groups.join('');
+
+        if (!val) {
+          safetyCompareResult.style.display = 'none';
+          return;
+        }
+
+        safetyCompareResult.style.display = 'block';
+        if (val === target) {
+          safetyCompareResult.className = 'safety-compare-result match';
+          safetyCompareResult.textContent = '✓ Safety Numbers Match! Conversation is verified.';
+          if (checkMarkVerified) checkMarkVerified.checked = true;
+          window.MyCircleStorage.markContactVerified(peer, true, safety.fingerprintShort).then(() => {
+            contact.isVerified = true;
+            contact.keyChanged = false;
+            if (securityWarningBanner) securityWarningBanner.style.display = 'none';
+            if (headerVerifiedBadge) headerVerifiedBadge.style.display = 'inline-flex';
+            updateStatusPill(true);
+          });
+        } else {
+          safetyCompareResult.className = 'safety-compare-result mismatch';
+          safetyCompareResult.textContent = '⚠️ Numbers do not match! Check for mistakes or potential security risk.';
+        }
+      };
+
+      if (btnCompareSafety) {
+        btnCompareSafety.onclick = handleCompare;
+      }
+      if (inputCompareSafety) {
+        inputCompareSafety.onkeyup = (e) => {
+          if (e.key === 'Enter') handleCompare();
+        };
+      }
     });
   }
+
+  // ==========================================================================
+  // Disappearing Messages Modal & Controls
+  // ==========================================================================
+  if (btnChatDisappearing) {
+    btnChatDisappearing.addEventListener('click', () => {
+      if (!activeConversation) return;
+      openModal('modal-disappearing');
+
+      const currentTtl = activeConversation.disappearingTtl || 0;
+      const radios = document.querySelectorAll('input[name="disappearing-duration"]');
+      radios.forEach(r => {
+        r.checked = Number(r.value) === Number(currentTtl);
+      });
+    });
+  }
+
+  if (btnSaveDisappearing) {
+    btnSaveDisappearing.addEventListener('click', async () => {
+      if (!activeConversation) return;
+      const selected = document.querySelector('input[name="disappearing-duration"]:checked');
+      const ttl = selected ? Number(selected.value) : 0;
+
+      activeConversation.disappearingTtl = ttl;
+      await window.MyCircleStorage.setConversationDisappearingTtl(activeConversation.id, ttl);
+
+      // Update header badge
+      if (headerDisappearingBadge) {
+        if (ttl > 0) {
+          headerDisappearingBadge.textContent = formatTtlShort(ttl);
+          headerDisappearingBadge.style.display = 'inline-block';
+          headerDisappearingBadge.title = `Disappearing messages active: ${formatTtl(ttl)}`;
+        } else {
+          headerDisappearingBadge.style.display = 'none';
+        }
+      }
+
+      // Broadcast setting change
+      const isGroup = activeConversation.type === 'group';
+      window.MyCircleSignaling.sendDisappearingSetting({
+        conversationId: activeConversation.id,
+        ttl,
+        isGroup,
+        memberList: isGroup ? activeConversation.members : null,
+        recipient: isGroup ? null : activeConversation.peerUsername
+      });
+
+      // Insert system notification into conversation
+      const notice = ttl > 0
+        ? `⏱️ You set disappearing messages to ${formatTtl(ttl)}.`
+        : '⏱️ You turned off disappearing messages.';
+
+      const sysMsg = {
+        id: 'sys_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        conversationId: activeConversation.id,
+        sender: 'system',
+        content: notice,
+        timestamp: Date.now(),
+        isSystem: true
+      };
+      await window.MyCircleStorage.saveMessage(sysMsg);
+      appendMessageBubble(sysMsg);
+
+      closeModal('modal-disappearing');
+      showToast(ttl > 0 ? `Disappearing messages set to ${formatTtl(ttl)}` : 'Disappearing messages turned off');
+      await loadConversations();
+    });
+  }
+
+  // Periodic Expired Message Sweeper (Runs every 10 seconds)
+  setInterval(async () => {
+    try {
+      const { deletedCount, expiredIds } = await window.MyCircleStorage.cleanupExpiredMessages();
+      if (deletedCount > 0 && activeConversation) {
+        expiredIds.forEach(id => {
+          const bubble = document.getElementById(`bubble-${id}`);
+          if (bubble) bubble.remove();
+        });
+        await loadConversations();
+      }
+    } catch (e) {
+      console.warn('Error during periodic message cleanup:', e);
+    }
+  }, 10000);
 
   // ==========================================================================
   // Settings & Privacy Modal
@@ -1971,8 +2673,9 @@
   // Application Bootstrap
   // ==========================================================================
   async function init() {
-    // 1. Initialize IndexedDB
+    // 1. Initialize IndexedDB & purge expired messages
     await window.MyCircleStorage.openDatabase();
+    await window.MyCircleStorage.cleanupExpiredMessages();
 
     // 2. Load stored theme
     const savedTheme = await window.MyCircleStorage.getSetting('theme', 'light');

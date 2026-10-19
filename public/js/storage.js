@@ -14,7 +14,7 @@
   'use strict';
 
   const DB_NAME = 'MyCircle_DeviceStorage';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   let dbPromise = null;
 
   function openDatabase() {
@@ -44,10 +44,20 @@
         }
 
         // 4. Messages store (Local encrypted/decrypted history on this device)
+        let msgStore;
         if (!db.objectStoreNames.contains('messages')) {
-          const msgStore = db.createObjectStore('messages', { keyPath: 'id' });
+          msgStore = db.createObjectStore('messages', { keyPath: 'id' });
           msgStore.createIndex('conversationId', 'conversationId', { unique: false });
           msgStore.createIndex('timestamp', 'timestamp', { unique: false });
+        } else {
+          msgStore = event.target.transaction.objectStore('messages');
+        }
+
+        if (!msgStore.indexNames.contains('status')) {
+          msgStore.createIndex('status', 'status', { unique: false });
+        }
+        if (!msgStore.indexNames.contains('expiresAt')) {
+          msgStore.createIndex('expiresAt', 'expiresAt', { unique: false });
         }
 
         // 5. Group Keys store (Stores AES-GCM group keys per epoch)
@@ -147,12 +157,32 @@
     });
   }
 
-  async function markContactVerified(username, isVerified = true) {
+  async function markContactVerified(username, isVerified = true, fingerprint = null) {
     const contact = await getContact(username);
     if (!contact) return null;
     contact.isVerified = isVerified;
+    if (isVerified) {
+      if (fingerprint) {
+        contact.verifiedFingerprint = fingerprint;
+      } else if (contact.ecdhPublicKey) {
+        contact.verifiedFingerprint = `${contact.ecdhPublicKey.x}:${contact.ecdhPublicKey.y}`;
+      }
+      contact.keyChanged = false;
+    }
     await saveContact(contact);
     return contact;
+  }
+
+  async function checkContactKeyChange(username, currentFp) {
+    const contact = await getContact(username);
+    if (!contact || !contact.verifiedFingerprint || !currentFp) return false;
+    if (contact.verifiedFingerprint !== currentFp) {
+      contact.keyChanged = true;
+      contact.isVerified = false;
+      await saveContact(contact);
+      return true;
+    }
+    return false;
   }
 
   // ----------------------------------------------------
@@ -216,6 +246,14 @@
     });
   }
 
+  async function setConversationDisappearingTtl(id, ttl = 0) {
+    const conv = await getConversation(id);
+    if (!conv) return null;
+    conv.disappearingTtl = Number(ttl) || 0;
+    await saveConversation(conv);
+    return conv;
+  }
+
   // ----------------------------------------------------
   // Messages API
   // ----------------------------------------------------
@@ -234,10 +272,12 @@
         const conv = convReq.result;
         if (conv) {
           conv.lastMessage = {
+            id: msg.id,
             content: msg.content,
             timestamp: msg.timestamp,
             sender: msg.sender,
-            status: msg.status
+            status: msg.status,
+            expiresAt: msg.expiresAt || null
           };
           conv.updatedAt = msg.timestamp;
           if (!msg.isOutgoing && msg.status !== 'read') {
@@ -249,6 +289,17 @@
 
       tx.oncomplete = () => resolve(msg);
       tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function getMessageById(messageId) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('messages', 'readonly');
+      const store = tx.objectStore('messages');
+      const req = store.get(messageId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
     });
   }
 
@@ -286,7 +337,7 @@
           const convReq = convStore.get(msg.conversationId);
           convReq.onsuccess = () => {
             const conv = convReq.result;
-            if (conv && conv.lastMessage && conv.lastMessage.timestamp === msg.timestamp) {
+            if (conv && conv.lastMessage && (conv.lastMessage.id === msg.id || conv.lastMessage.timestamp === msg.timestamp)) {
               conv.lastMessage.status = status;
               convStore.put(conv);
             }
@@ -296,6 +347,112 @@
 
       tx.oncomplete = () => resolve(true);
       tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function updateMessageReactions(messageId, emoji, username, action) {
+    const db = await openDatabase();
+    const user = (username || '').toLowerCase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('messages', 'readwrite');
+      const store = tx.objectStore('messages');
+      const req = store.get(messageId);
+
+      let updatedReactions = null;
+      req.onsuccess = () => {
+        const msg = req.result;
+        if (!msg) return;
+
+        if (!msg.reactions || typeof msg.reactions !== 'object') {
+          msg.reactions = {};
+        }
+
+        const list = Array.isArray(msg.reactions[emoji]) ? [...msg.reactions[emoji]] : [];
+        const idx = list.indexOf(user);
+
+        if (action === 'add') {
+          if (idx === -1) list.push(user);
+        } else if (action === 'remove') {
+          if (idx !== -1) list.splice(idx, 1);
+        } else {
+          // Default toggle
+          if (idx === -1) list.push(user);
+          else list.splice(idx, 1);
+        }
+
+        if (list.length > 0) {
+          msg.reactions[emoji] = list;
+        } else {
+          delete msg.reactions[emoji];
+        }
+
+        store.put(msg);
+        updatedReactions = msg.reactions;
+      };
+
+      tx.oncomplete = () => resolve(updatedReactions);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function cleanupExpiredMessages() {
+    const db = await openDatabase();
+    const now = Date.now();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['messages', 'conversations'], 'readwrite');
+      const msgStore = tx.objectStore('messages');
+      const convStore = tx.objectStore('conversations');
+      const expiredIds = [];
+      const affectedConvIds = new Set();
+
+      const req = msgStore.openCursor();
+      req.onsuccess = (e) => {
+        const cursor = e.target.result;
+        if (cursor) {
+          const msg = cursor.value;
+          if (msg.expiresAt && Number(msg.expiresAt) <= now) {
+            expiredIds.push(msg.id);
+            affectedConvIds.add(msg.conversationId);
+            cursor.delete();
+          }
+          cursor.continue();
+        } else {
+          // Check if affected conversations had an expired last message
+          for (const convId of affectedConvIds) {
+            const cReq = convStore.get(convId);
+            cReq.onsuccess = () => {
+              const conv = cReq.result;
+              if (conv && conv.lastMessage && expiredIds.includes(conv.lastMessage.id)) {
+                conv.lastMessage = {
+                  content: '⏱️ Message expired',
+                  timestamp: conv.updatedAt || now,
+                  status: 'expired'
+                };
+                convStore.put(conv);
+              }
+            };
+          }
+        }
+      };
+
+      tx.oncomplete = () => resolve({ deletedCount: expiredIds.length, expiredIds });
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function getPendingMessages() {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('messages', 'readonly');
+      const store = tx.objectStore('messages');
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const all = req.result || [];
+        const pending = all.filter(m => m.isOutgoing && (m.status === 'sending' || m.status === 'failed'));
+        pending.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        resolve(pending);
+      };
+      req.onerror = () => reject(req.error);
     });
   }
 
@@ -383,13 +540,19 @@
     getContact,
     getAllContacts,
     markContactVerified,
+    checkContactKeyChange,
     saveConversation,
     getConversation,
     getAllConversations,
     deleteConversation,
+    setConversationDisappearingTtl,
     saveMessage,
+    getMessageById,
     getMessages,
     updateMessageStatus,
+    updateMessageReactions,
+    cleanupExpiredMessages,
+    getPendingMessages,
     saveGroupKey,
     getGroupKey,
     getSetting,
