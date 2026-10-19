@@ -80,6 +80,10 @@
   // State variables for new features
   let activeReply = null;
   let activePopoverMsgId = null;
+  let activeEditingMessageId = null;
+  let activeDeleteMsgId = null;
+  let pendingAttachment = null;
+  const mediaBlobCache = new Map();
   const COMMON_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
   // DOM Elements - Messages & Input
@@ -90,9 +94,55 @@
   const btnSendMessage = document.getElementById('btn-send-message');
   const toastContainer = document.getElementById('toast-container');
 
+  // DOM Elements - Attachments & Editing & Modals
+  const btnChatAttach = document.getElementById('btn-chat-attach');
+  const chatAttachMenu = document.getElementById('chat-attach-menu');
+  const btnAttachPhoto = document.getElementById('btn-attach-photo');
+  const btnAttachDoc = document.getElementById('btn-attach-doc');
+  const btnAttachPoll = document.getElementById('btn-attach-poll');
+  const fileInputPhoto = document.getElementById('file-input-photo');
+  const fileInputDoc = document.getElementById('file-input-doc');
+  const attachmentPreviewBar = document.getElementById('attachment-preview-bar');
+  const attachmentPreviewThumb = document.getElementById('attachment-preview-thumb');
+  const attachmentPreviewName = document.getElementById('attachment-preview-name');
+  const attachmentPreviewSize = document.getElementById('attachment-preview-size');
+  const btnCancelAttachment = document.getElementById('btn-cancel-attachment');
+
+  const editPreviewBar = document.getElementById('edit-preview-bar');
+  const editPreviewSnippet = document.getElementById('edit-preview-snippet');
+  const btnCancelEdit = document.getElementById('btn-cancel-edit');
+
+  const modalImageLightbox = document.getElementById('modal-image-lightbox');
+  const lightboxImg = document.getElementById('lightbox-img');
+  const lightboxFilename = document.getElementById('lightbox-filename');
+  const lightboxDownloadBtn = document.getElementById('lightbox-download-btn');
+
+  const modalCreatePoll = document.getElementById('modal-create-poll');
+  const pollQuestionInput = document.getElementById('poll-question-input');
+  const pollOptionsList = document.getElementById('poll-options-list');
+  const btnPollAddOption = document.getElementById('btn-poll-add-option');
+  const pollDurationSelect = document.getElementById('poll-duration-select');
+  const pollAnonymousCheck = document.getElementById('poll-anonymous-check');
+  const btnSubmitCreatePoll = document.getElementById('btn-submit-create-poll');
+
+  const modalDeleteMessage = document.getElementById('modal-delete-message');
+  const btnDeleteEveryone = document.getElementById('btn-delete-everyone');
+  const btnDeleteMe = document.getElementById('btn-delete-me');
+
+  const btnGroupInfoCreatePoll = document.getElementById('btn-group-info-create-poll');
+  const btnGroupInfoShareFile = document.getElementById('btn-group-info-share-file');
+
   // ==========================================================================
   // Toast & Formatting Utilities
   // ==========================================================================
+  function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
   function showToast(message, duration = 3200) {
     if (!toastContainer) return;
     const toast = document.createElement('div');
@@ -627,6 +677,12 @@
         senderName: contact.displayName || sender,
         recipient: currentAccount.username,
         content: decrypted.payload.content,
+        type: decrypted.payload.type || 'text',
+        attachment: decrypted.payload.attachment || null,
+        poll: decrypted.payload.poll || null,
+        isEdited: !!decrypted.payload.isEdited,
+        editedAt: decrypted.payload.editedAt || null,
+        isDeleted: !!decrypted.payload.isDeleted,
         timestamp: packet.timestamp || decrypted.payload.timestamp || Date.now(),
         status: 'delivered',
         isOutgoing: false,
@@ -693,6 +749,12 @@
         sender: packet.sender,
         senderName: packet.senderName || packet.sender,
         content: decrypted.payload.content,
+        type: decrypted.payload.type || 'text',
+        attachment: decrypted.payload.attachment || null,
+        poll: decrypted.payload.poll || null,
+        isEdited: !!decrypted.payload.isEdited,
+        editedAt: decrypted.payload.editedAt || null,
+        isDeleted: !!decrypted.payload.isDeleted,
         timestamp: packet.timestamp || decrypted.payload.timestamp || Date.now(),
         status: 'delivered',
         isOutgoing: false,
@@ -861,6 +923,40 @@
     }
   });
 
+  // Handle Incoming Message Edit
+  window.MyCircleSignaling.on('message-edit', async ({ conversationId, messageId, newContent, editedAt, sender }) => {
+    await window.MyCircleStorage.updateMessageContent(messageId, newContent, editedAt);
+    if (activeConversation && activeConversation.id === conversationId) {
+      await loadMessages(activeConversation.id);
+    }
+    await loadConversations();
+  });
+
+  // Handle Incoming Message Delete
+  window.MyCircleSignaling.on('message-delete', async ({ conversationId, messageId, sender }) => {
+    await window.MyCircleStorage.deleteMessageForEveryone(messageId);
+    if (activeConversation && activeConversation.id === conversationId) {
+      await loadMessages(activeConversation.id);
+    }
+    await loadConversations();
+  });
+
+  // Handle Incoming Group Poll Vote
+  window.MyCircleSignaling.on('group-poll-vote', async ({ groupId, messageId, optionIndexes, voter }) => {
+    await window.MyCircleStorage.updateGroupPollVote(messageId, optionIndexes, voter);
+    if (activeConversation && activeConversation.groupId === groupId) {
+      await loadMessages(activeConversation.id);
+    }
+  });
+
+  // Handle Incoming Group Poll Close
+  window.MyCircleSignaling.on('group-poll-close', async ({ groupId, messageId, closedBy }) => {
+    await window.MyCircleStorage.closeGroupPoll(messageId, closedBy);
+    if (activeConversation && activeConversation.groupId === groupId) {
+      await loadMessages(activeConversation.id);
+    }
+  });
+
   // ==========================================================================
   // Conversations List & Thread Management
   // ==========================================================================
@@ -941,9 +1037,15 @@
     conv.unreadCount = 0;
     await window.MyCircleStorage.saveConversation(conv);
 
-    // Reset active reply bar
+    // Reset active reply bar, attachments, and editing states
     activeReply = null;
     if (replyPreviewBar) replyPreviewBar.style.display = 'none';
+    pendingAttachment = null;
+    if (attachmentPreviewBar) attachmentPreviewBar.style.display = 'none';
+    if (fileInputPhoto) fileInputPhoto.value = '';
+    if (fileInputDoc) fileInputDoc.value = '';
+    activeEditingMessageId = null;
+    if (editPreviewBar) editPreviewBar.style.display = 'none';
 
     // Responsive Mobile layout: slide in chat pane
     document.querySelector('.app-layout').classList.add('conversation-open');
@@ -980,10 +1082,12 @@
       activeStatusText.textContent = `${formatMemberCount(count)} • End-to-End Encrypted`;
       btnGroupManage.style.display = 'flex';
       btnVerifySafety.style.display = 'none';
+      if (btnAttachPoll) btnAttachPoll.style.display = 'flex';
       if (headerVerifiedBadge) headerVerifiedBadge.style.display = 'none';
       if (securityWarningBanner) securityWarningBanner.style.display = 'none';
     } else {
       activeStatusDot.style.display = 'inline-block';
+      if (btnAttachPoll) btnAttachPoll.style.display = 'none';
       const isOnline = window.MyCircleSignaling.isPeerOnline(conv.peerUsername || '');
       activeStatusDot.className = isOnline ? 'status-dot online' : 'status-dot';
       activeStatusText.textContent = isOnline ? 'Online • End-to-End Encrypted' : 'Offline • Local IndexedDB';
@@ -1841,6 +1945,201 @@
     scrollToBottom();
   }
 
+  // ----------------------------------------------------
+  // Encryption & Media Helpers
+  // ----------------------------------------------------
+  async function getConversationEncryptionKey(conversation) {
+    if (!conversation) throw new Error('No active conversation');
+    if (conversation.type === 'group') {
+      const epoch = conversation.epoch || 1;
+      const keyRecord = await window.MyCircleStorage.getGroupKey(conversation.groupId, epoch);
+      if (!keyRecord) throw new Error('Group encryption key not found');
+      return await window.MyCircleCrypto.importRawGroupKey(keyRecord.rawGroupKey);
+    } else {
+      const peer = conversation.peerUsername.toLowerCase();
+      let contact = await window.MyCircleStorage.getContact(peer);
+      if (!contact || !contact.ecdhPublicKey) {
+        const res = await fetch(`/api/auth/users/${peer}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.user) {
+            contact = data.user;
+            await window.MyCircleStorage.saveContact(contact);
+          }
+        }
+      }
+      if (!contact || !contact.ecdhPublicKey) throw new Error(`Missing public key for @${peer}`);
+      const localPriv = await window.MyCircleCrypto.importECDHPrivateKey(currentAccount.jwk.ecdhPrivate);
+      const remotePub = await window.MyCircleCrypto.importECDHPublicKey(contact.ecdhPublicKey);
+      return await window.MyCircleCrypto.derivePairwiseKey(localPriv, remotePub);
+    }
+  }
+
+  function getDocIcon(name) {
+    const n = (name || '').toLowerCase();
+    if (n.endsWith('.pdf') || n.includes('pdf')) return '📕';
+    if (n.endsWith('.doc') || n.endsWith('.docx') || n.includes('word')) return '📝';
+    if (n.endsWith('.xls') || n.endsWith('.xlsx') || n.includes('sheet') || n.includes('excel')) return '📊';
+    if (n.endsWith('.ppt') || n.endsWith('.pptx') || n.includes('presentation')) return '📑';
+    if (n.endsWith('.txt')) return '📄';
+    return '📁';
+  }
+
+  async function loadAttachmentMedia(msg) {
+    if (!msg.attachment || !msg.attachment.id) return;
+    if (mediaBlobCache.has(msg.attachment.id)) {
+      const imgEl = document.getElementById(`att-img-${msg.id}`);
+      if (imgEl) {
+        imgEl.src = mediaBlobCache.get(msg.attachment.id);
+        imgEl.style.opacity = '1';
+        imgEl.style.minHeight = '';
+        imgEl.style.minWidth = '';
+      }
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/attachments/${msg.attachment.id}`);
+      if (!res.ok) throw new Error('Attachment download failed');
+      const cipherBuf = await res.arrayBuffer();
+
+      const conv = await window.MyCircleStorage.getConversation(msg.conversationId);
+      if (!conv) return;
+
+      const key = await getConversationEncryptionKey(conv);
+      const decryptedBuf = await window.MyCircleCrypto.decryptBinaryData(key, msg.attachment.iv, cipherBuf);
+
+      const blob = new Blob([decryptedBuf], { type: msg.attachment.fileType || 'image/jpeg' });
+      const objectUrl = URL.createObjectURL(blob);
+      mediaBlobCache.set(msg.attachment.id, objectUrl);
+
+      const imgEl = document.getElementById(`att-img-${msg.id}`);
+      if (imgEl) {
+        imgEl.src = objectUrl;
+        imgEl.style.opacity = '1';
+        imgEl.style.minHeight = '';
+        imgEl.style.minWidth = '';
+      }
+    } catch (e) {
+      console.warn('Failed to load attachment media:', e);
+      const imgEl = document.getElementById(`att-img-${msg.id}`);
+      if (imgEl) {
+        imgEl.alt = '⚠️ Failed to decrypt photo';
+      }
+    }
+  }
+
+  window.downloadAttachment = async function (msgId) {
+    const msg = await window.MyCircleStorage.getMessageById(msgId);
+    if (!msg || !msg.attachment) return;
+
+    try {
+      showToast('Downloading & decrypting attachment...');
+      let objectUrl = mediaBlobCache.get(msg.attachment.id);
+      if (!objectUrl) {
+        const res = await fetch(`/api/attachments/${msg.attachment.id}`);
+        if (!res.ok) throw new Error('Could not download file');
+        const cipherBuf = await res.arrayBuffer();
+
+        const conv = await window.MyCircleStorage.getConversation(msg.conversationId);
+        const key = await getConversationEncryptionKey(conv);
+        const decryptedBuf = await window.MyCircleCrypto.decryptBinaryData(key, msg.attachment.iv, cipherBuf);
+
+        const blob = new Blob([decryptedBuf], { type: msg.attachment.fileType || 'application/octet-stream' });
+        objectUrl = URL.createObjectURL(blob);
+        mediaBlobCache.set(msg.attachment.id, objectUrl);
+      }
+
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = (msg.attachment.fileName || 'download').replace(/[/\\]/g, '_');
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast('Download complete!');
+    } catch (err) {
+      console.error('Download attachment error:', err);
+      showToast(err.message || 'Failed to download attachment');
+    }
+  };
+
+  window.openLightbox = async function (msgId) {
+    const msg = await window.MyCircleStorage.getMessageById(msgId);
+    if (!msg || !msg.attachment) return;
+
+    let objectUrl = mediaBlobCache.get(msg.attachment.id);
+    if (!objectUrl) {
+      await loadAttachmentMedia(msg);
+      objectUrl = mediaBlobCache.get(msg.attachment.id);
+    }
+
+    if (objectUrl && lightboxImg) {
+      lightboxImg.src = objectUrl;
+      if (lightboxFilename) lightboxFilename.textContent = msg.attachment.fileName || 'Photo';
+      if (lightboxDownloadBtn) {
+        lightboxDownloadBtn.href = objectUrl;
+        lightboxDownloadBtn.download = (msg.attachment.fileName || 'photo.jpg').replace(/[/\\]/g, '_');
+      }
+      openModal('modal-image-lightbox');
+    }
+  };
+
+  // ----------------------------------------------------
+  // Poll Rendering
+  // ----------------------------------------------------
+  function renderPollHtml(msg) {
+    const poll = msg.poll;
+    if (!poll) return '';
+    const isClosed = poll.closed || (poll.closingTime && Date.now() > poll.closingTime);
+    const myUser = (currentAccount ? currentAccount.username : '').toLowerCase();
+    const isCreator = poll.creator && poll.creator.toLowerCase() === myUser;
+    const isAdmin = activeConversation && activeConversation.admin === currentAccount.username;
+    const canClose = !isClosed && (isCreator || isAdmin);
+
+    let optionsHtml = '';
+    const totalVotes = poll.totalVotes || 0;
+
+    poll.options.forEach((opt, idx) => {
+      const votes = Array.isArray(opt.votes) ? opt.votes : [];
+      const count = votes.length;
+      const percent = totalVotes > 0 ? Math.round((count / totalVotes) * 100) : 0;
+      const isVotedByMe = votes.some(v => (v || '').toLowerCase() === myUser);
+
+      optionsHtml += `
+        <div class="poll-option-row ${isVotedByMe ? 'voted' : ''} ${isClosed ? 'disabled' : ''}" onclick="window.votePoll('${msg.id}', ${idx})">
+          <div class="poll-bar-bg" style="width: ${percent}%;"></div>
+          <div class="poll-option-content">
+            <div class="poll-opt-left">
+              <div class="poll-opt-radio"></div>
+              <span class="poll-opt-text">${escapeHTML(opt.text)}</span>
+            </div>
+            <span class="poll-opt-count">${count} (${percent}%)</span>
+          </div>
+        </div>
+      `;
+    });
+
+    let footerHtml = `
+      <div class="poll-footer">
+        <span>${totalVotes} vote${totalVotes === 1 ? '' : 's'} • ${poll.isMultipleChoice ? 'Multiple choice' : 'Single choice'}${poll.isAnonymous ? ' • Anonymous' : ''}</span>
+        ${canClose ? `<button type="button" class="poll-close-action-btn" onclick="window.closePoll('${msg.id}', event)">Close Poll</button>` : ''}
+      </div>
+    `;
+
+    return `
+      <div class="poll-bubble">
+        <div class="poll-header">
+          <div class="poll-question">📊 ${escapeHTML(poll.question)}</div>
+          <span class="poll-badge ${isClosed ? 'closed' : 'open'}">${isClosed ? 'Closed' : 'Open'}</span>
+        </div>
+        <div class="poll-options-container">
+          ${optionsHtml}
+        </div>
+        ${footerHtml}
+      </div>
+    `;
+  }
+
   function appendMessageBubble(msg, shouldScroll = true) {
     if (msg.isSystem) {
       const sysEl = document.createElement('div');
@@ -1857,7 +2156,7 @@
 
     // Mobile tap support: tapping bubble toggles action bar
     row.addEventListener('click', (e) => {
-      if (e.target.closest('.message-actions-bar') || e.target.closest('.emoji-picker-popover') || e.target.closest('.reaction-pill') || e.target.closest('.message-reply-quote')) {
+      if (e.target.closest('.message-actions-bar') || e.target.closest('.emoji-picker-popover') || e.target.closest('.reaction-pill') || e.target.closest('.message-reply-quote') || e.target.closest('.poll-option-row') || e.target.closest('.poll-close-action-btn') || e.target.closest('.message-attachment-image') || e.target.closest('.message-attachment-doc')) {
         return;
       }
       document.querySelectorAll('.message-row.action-open').forEach(r => {
@@ -1890,7 +2189,7 @@
       replyQuoteHtml = `
         <div class="message-reply-quote" onclick="window.jumpToMessage('${escapeHTML(msg.replyTo.id)}')">
           <div class="message-reply-quote-sender">${escapeHTML(msg.replyTo.senderName || msg.replyTo.sender)}</div>
-          <div class="message-reply-quote-text">${escapeHTML(msg.replyTo.snippet || '')}</div>
+          <div class="message-reply-quote-text">${escapeHTML(msg.replyTo.snippet || 'Original message')}</div>
         </div>
       `;
     }
@@ -1903,20 +2202,83 @@
       timerHtml = `<span class="disappearing-timer-indicator" title="Disappearing message: expires in ${remainingStr}">⏱️</span>`;
     }
 
+    // Edited badge
+    let editedHtml = '';
+    if (msg.isEdited) {
+      editedHtml = `<span class="edited-badge" title="Edited message">Edited</span>`;
+    }
+
     // Reaction pills beneath bubble
     const reactionsHtml = renderReactionsHtml(msg.id, msg.reactions);
 
-    // Message action buttons (Reply, React)
-    const actionsBarHtml = `
-      <div class="message-actions-bar">
-        <button type="button" class="message-action-btn" onclick="window.setReplyMessage('${msg.id}')" title="Reply">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>
-        </button>
-        <button type="button" class="message-action-btn" onclick="window.toggleEmojiPicker('${msg.id}', event)" title="React with emoji">
-          😊
-        </button>
-      </div>
-    `;
+    // Message action buttons (Reply, React, Edit, Delete)
+    const canEdit = msg.isOutgoing && !msg.isDeleted && (!msg.type || msg.type === 'text') && (Date.now() - msg.timestamp < 15 * 60 * 1000);
+    const canDelete = msg.isOutgoing && !msg.isDeleted;
+
+    let actionsBarHtml = '';
+    if (!msg.isDeleted) {
+      actionsBarHtml = `
+        <div class="message-actions-bar">
+          <button type="button" class="message-action-btn" onclick="window.setReplyMessage('${msg.id}')" title="Reply">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 17 4 12 9 7"></polyline><path d="M20 18v-2a4 4 0 0 0-4-4H4"></path></svg>
+          </button>
+          <button type="button" class="message-action-btn" onclick="window.toggleEmojiPicker('${msg.id}', event)" title="React with emoji">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+          </button>
+          ${canEdit ? `
+            <button type="button" class="message-action-btn" onclick="window.startEditMessage('${msg.id}')" title="Edit message">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+            </button>
+          ` : ''}
+          ${canDelete ? `
+            <button type="button" class="message-action-btn" onclick="window.openDeleteModal('${msg.id}')" title="Delete message">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // Attachment content
+    let attachmentHtml = '';
+    if (msg.attachment && msg.attachment.isImage) {
+      attachmentHtml = `
+        <div class="message-attachment-image" id="att-box-${msg.id}" onclick="window.openLightbox('${msg.id}')" title="Tap to view larger photo">
+          <img id="att-img-${msg.id}" src="${mediaBlobCache.get(msg.attachment.id) || ''}" alt="${escapeHTML(msg.attachment.fileName || 'Photo')}" style="${mediaBlobCache.has(msg.attachment.id) ? '' : 'opacity: 0.3; min-height: 140px; min-width: 200px;'}">
+        </div>
+      `;
+      if (!mediaBlobCache.has(msg.attachment.id)) {
+        setTimeout(() => loadAttachmentMedia(msg), 15);
+      }
+    } else if (msg.attachment) {
+      const icon = getDocIcon(msg.attachment.fileName || msg.attachment.fileType);
+      attachmentHtml = `
+        <div class="message-attachment-doc" onclick="window.downloadAttachment('${msg.id}')" title="Tap to download file">
+          <span class="doc-icon">${icon}</span>
+          <div class="doc-info">
+            <div class="doc-name" title="${escapeHTML(msg.attachment.fileName)}">${escapeHTML(msg.attachment.fileName)}</div>
+            <div class="doc-meta">${formatFileSize(msg.attachment.fileSize)} • Tap to download</div>
+          </div>
+          <button type="button" class="doc-download-btn" title="Download">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </button>
+        </div>
+      `;
+    }
+
+    // Main message body
+    let bodyHtml = '';
+    if (msg.isDeleted) {
+      bodyHtml = `<div class="message-text deleted">🚫 This message was deleted</div>`;
+    } else if (msg.type === 'poll' && msg.poll) {
+      bodyHtml = renderPollHtml(msg);
+    } else {
+      const textHtml = msg.content ? `<div class="message-text">${escapeHTML(msg.content)}</div>` : '';
+      bodyHtml = `
+        ${attachmentHtml}
+        ${textHtml}
+      `;
+    }
 
     row.innerHTML = `
       ${senderTag}
@@ -1924,9 +2286,10 @@
         ${actionsBarHtml}
         <div class="message-bubble">
           ${replyQuoteHtml}
-          <div class="message-text">${escapeHTML(msg.content)}</div>
+          ${bodyHtml}
           <div class="message-meta">
             ${timerHtml}
+            ${editedHtml}
             <span>${formatTime(msg.timestamp)}</span>
             ${tickHtml}
           </div>
@@ -2085,7 +2448,16 @@
               conv.groupId,
               msg.content,
               currentAccount,
-              { id: msg.id, timestamp: msg.timestamp, expiresAt: msg.expiresAt, ttl: msg.ttl, replyTo: msg.replyTo }
+              {
+                id: msg.id,
+                timestamp: msg.timestamp,
+                expiresAt: msg.expiresAt,
+                ttl: msg.ttl,
+                replyTo: msg.replyTo,
+                type: msg.type || 'text',
+                attachment: msg.attachment || null,
+                poll: msg.poll || null
+              }
             );
             groupPacket.expiresAt = msg.expiresAt;
             window.MyCircleSignaling.sendGroupEncryptedPacket(groupPacket, conv.members);
@@ -2118,7 +2490,10 @@
               timestamp: msg.timestamp,
               expiresAt: msg.expiresAt,
               ttl: msg.ttl,
-              replyTo: msg.replyTo
+              replyTo: msg.replyTo,
+              type: msg.type || 'text',
+              attachment: msg.attachment || null,
+              poll: msg.poll || null
             });
 
             const packet = {
@@ -2156,12 +2531,42 @@
   }
 
   // ==========================================================================
-  // Sending Messages
+  // Sending Messages & Encrypted Attachments
   // ==========================================================================
   async function sendMessage() {
     if (!activeConversation) return;
+
+    // Handle Edit Mode
+    if (activeEditingMessageId) {
+      const text = messageInput.value.trim();
+      if (!text) {
+        showToast('Message cannot be empty');
+        return;
+      }
+      const editId = activeEditingMessageId;
+      activeEditingMessageId = null;
+      messageInput.value = '';
+      if (editPreviewBar) editPreviewBar.style.display = 'none';
+
+      await window.MyCircleStorage.updateMessageContent(editId, text);
+      const isGroup = activeConversation.type === 'group';
+      window.MyCircleSignaling.sendMessageEdit({
+        conversationId: activeConversation.id,
+        messageId: editId,
+        newContent: text,
+        isGroup,
+        memberList: isGroup ? activeConversation.members : null,
+        recipient: isGroup ? null : activeConversation.peerUsername
+      });
+      await loadMessages(activeConversation.id);
+      await loadConversations();
+      showToast('Message edited');
+      return;
+    }
+
     const text = messageInput.value.trim();
-    if (!text) return;
+    const hasAttachment = !!pendingAttachment;
+    if (!text && !hasAttachment) return;
 
     messageInput.value = '';
     btnSendMessage.disabled = true;
@@ -2179,6 +2584,57 @@
     activeReply = null;
     if (replyPreviewBar) replyPreviewBar.style.display = 'none';
 
+    let attachmentMeta = null;
+    if (hasAttachment) {
+      try {
+        showToast('Encrypting & uploading attachment...');
+        const key = await getConversationEncryptionKey(activeConversation);
+        const encRes = await window.MyCircleCrypto.encryptBinaryData(key, pendingAttachment.data);
+
+        const uploadRes = await fetch('/api/attachments/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${window.MyCircleAuth.getToken()}`
+          },
+          body: JSON.stringify({
+            ciphertext: encRes.ciphertext,
+            contentType: pendingAttachment.type
+          })
+        });
+
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to upload attachment');
+        }
+
+        const uploadData = await uploadRes.json();
+        attachmentMeta = {
+          id: uploadData.attachmentId,
+          fileName: pendingAttachment.name,
+          fileType: pendingAttachment.type,
+          fileSize: pendingAttachment.size,
+          iv: encRes.iv,
+          isImage: pendingAttachment.isImage
+        };
+
+        if (pendingAttachment.isImage) {
+          const localBlob = new Blob([pendingAttachment.data], { type: pendingAttachment.type });
+          mediaBlobCache.set(uploadData.attachmentId, URL.createObjectURL(localBlob));
+        }
+      } catch (attErr) {
+        console.error('Attachment upload failed:', attErr);
+        btnSendMessage.disabled = false;
+        showToast(attErr.message || 'Attachment transfer failed');
+        return;
+      } finally {
+        pendingAttachment = null;
+        if (attachmentPreviewBar) attachmentPreviewBar.style.display = 'none';
+        if (fileInputPhoto) fileInputPhoto.value = '';
+        if (fileInputDoc) fileInputDoc.value = '';
+      }
+    }
+
     // Create local message record
     const msgRecord = {
       id: messageId,
@@ -2187,6 +2643,8 @@
       senderName: currentAccount.displayName || currentAccount.username,
       recipient: isGroup ? activeConversation.groupId : activeConversation.peerUsername,
       content: text,
+      type: attachmentMeta ? (attachmentMeta.isImage ? 'image' : 'file') : 'text',
+      attachment: attachmentMeta,
       timestamp,
       status: 'sending',
       isOutgoing: true,
@@ -2215,7 +2673,15 @@
           activeConversation.groupId,
           text,
           currentAccount,
-          { id: messageId, timestamp, expiresAt, ttl, replyTo }
+          {
+            id: messageId,
+            timestamp,
+            expiresAt,
+            ttl,
+            replyTo,
+            type: msgRecord.type,
+            attachment: attachmentMeta
+          }
         );
         groupPacket.expiresAt = expiresAt;
 
@@ -2255,7 +2721,9 @@
           timestamp,
           expiresAt,
           ttl,
-          replyTo
+          replyTo,
+          type: msgRecord.type,
+          attachment: attachmentMeta
         });
 
         const packet = {
@@ -2307,6 +2775,370 @@
       await loadMessages(activeConversation.id);
     }
   };
+
+  // ==========================================================================
+  // Message Editing & Deletion Handlers
+  // ==========================================================================
+  window.startEditMessage = async function (msgId) {
+    const msg = await window.MyCircleStorage.getMessageById(msgId);
+    if (!msg || !msg.isOutgoing || msg.isDeleted) return;
+
+    activeEditingMessageId = msgId;
+    if (editPreviewSnippet) editPreviewSnippet.textContent = (msg.content || '').slice(0, 80);
+    if (editPreviewBar) editPreviewBar.style.display = 'flex';
+    if (messageInput) {
+      messageInput.value = msg.content || '';
+      messageInput.focus();
+    }
+    // Cancel reply if open
+    activeReply = null;
+    if (replyPreviewBar) replyPreviewBar.style.display = 'none';
+  };
+
+  if (btnCancelEdit) {
+    btnCancelEdit.addEventListener('click', () => {
+      activeEditingMessageId = null;
+      if (editPreviewBar) editPreviewBar.style.display = 'none';
+      if (messageInput) messageInput.value = '';
+    });
+  }
+
+  window.openDeleteModal = function (msgId) {
+    activeDeleteMsgId = msgId;
+    openModal('modal-delete-message');
+  };
+
+  if (btnDeleteEveryone) {
+    btnDeleteEveryone.addEventListener('click', async () => {
+      if (!activeDeleteMsgId || !activeConversation) return;
+      const msgId = activeDeleteMsgId;
+      closeModal('modal-delete-message');
+      activeDeleteMsgId = null;
+
+      await window.MyCircleStorage.deleteMessageForEveryone(msgId);
+      const isGroup = activeConversation.type === 'group';
+      window.MyCircleSignaling.sendMessageDelete({
+        conversationId: activeConversation.id,
+        messageId: msgId,
+        isGroup,
+        memberList: isGroup ? activeConversation.members : null,
+        recipient: isGroup ? null : activeConversation.peerUsername
+      });
+
+      await loadMessages(activeConversation.id);
+      await loadConversations();
+      showToast('Message deleted for everyone');
+    });
+  }
+
+  if (btnDeleteMe) {
+    btnDeleteMe.addEventListener('click', async () => {
+      if (!activeDeleteMsgId) return;
+      const msgId = activeDeleteMsgId;
+      closeModal('modal-delete-message');
+      activeDeleteMsgId = null;
+
+      await window.MyCircleStorage.deleteMessageForMe(msgId);
+      const bubble = document.getElementById(`bubble-${msgId}`);
+      if (bubble) bubble.remove();
+      await loadConversations();
+      showToast('Message deleted for you');
+    });
+  }
+
+  // ==========================================================================
+  // Attachments Handling (Photos & Documents)
+  // ==========================================================================
+  if (btnChatAttach) {
+    btnChatAttach.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (chatAttachMenu) chatAttachMenu.classList.toggle('visible');
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    if (chatAttachMenu && !e.target.closest('#chat-attach-menu') && !e.target.closest('#btn-chat-attach')) {
+      chatAttachMenu.classList.remove('visible');
+    }
+  });
+
+  if (btnAttachPhoto) {
+    btnAttachPhoto.addEventListener('click', () => {
+      if (chatAttachMenu) chatAttachMenu.classList.remove('visible');
+      if (fileInputPhoto) fileInputPhoto.click();
+    });
+  }
+
+  if (btnAttachDoc) {
+    btnAttachDoc.addEventListener('click', () => {
+      if (chatAttachMenu) chatAttachMenu.classList.remove('visible');
+      if (fileInputDoc) fileInputDoc.click();
+    });
+  }
+
+  const handleFileSelected = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+
+    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB limit
+    if (file.size > MAX_SIZE) {
+      showToast('File exceeds 10MB limit. Please select a smaller file.');
+      e.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      pendingAttachment = {
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        isImage: file.type.startsWith('image/'),
+        data: reader.result // ArrayBuffer
+      };
+
+      if (attachmentPreviewBar) {
+        if (pendingAttachment.isImage && attachmentPreviewThumb) {
+          const blob = new Blob([reader.result], { type: file.type });
+          attachmentPreviewThumb.src = URL.createObjectURL(blob);
+          attachmentPreviewThumb.style.display = 'block';
+        } else if (attachmentPreviewThumb) {
+          attachmentPreviewThumb.style.display = 'none';
+        }
+
+        if (attachmentPreviewName) attachmentPreviewName.textContent = file.name;
+        if (attachmentPreviewSize) attachmentPreviewSize.textContent = formatFileSize(file.size);
+        attachmentPreviewBar.style.display = 'flex';
+      }
+
+      if (messageInput) messageInput.focus();
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  if (fileInputPhoto) fileInputPhoto.addEventListener('change', handleFileSelected);
+  if (fileInputDoc) fileInputDoc.addEventListener('change', handleFileSelected);
+
+  if (btnCancelAttachment) {
+    btnCancelAttachment.addEventListener('click', () => {
+      pendingAttachment = null;
+      if (fileInputPhoto) fileInputPhoto.value = '';
+      if (fileInputDoc) fileInputDoc.value = '';
+      if (attachmentPreviewBar) attachmentPreviewBar.style.display = 'none';
+    });
+  }
+
+  // ==========================================================================
+  // Group Polls Handling
+  // ==========================================================================
+  const openPollModal = () => {
+    if (chatAttachMenu) chatAttachMenu.classList.remove('visible');
+    if (!activeConversation || activeConversation.type !== 'group') {
+      showToast('Polls can only be created inside circles (group chats).');
+      return;
+    }
+    if (pollQuestionInput) pollQuestionInput.value = '';
+    if (pollOptionsList) {
+      pollOptionsList.innerHTML = `
+        <div class="poll-option-row">
+          <input type="text" class="form-input poll-opt-input" placeholder="Option 1" maxlength="100" autocomplete="off" required>
+        </div>
+        <div class="poll-option-row">
+          <input type="text" class="form-input poll-opt-input" placeholder="Option 2" maxlength="100" autocomplete="off" required>
+        </div>
+      `;
+    }
+    if (pollDurationSelect) pollDurationSelect.value = '86400000';
+    if (pollAnonymousCheck) pollAnonymousCheck.checked = false;
+    openModal('modal-create-poll');
+  };
+
+  if (btnAttachPoll) btnAttachPoll.addEventListener('click', openPollModal);
+  if (btnGroupInfoCreatePoll) {
+    btnGroupInfoCreatePoll.addEventListener('click', () => {
+      closeModal('modal-group-info');
+      openPollModal();
+    });
+  }
+  if (btnGroupInfoShareFile) {
+    btnGroupInfoShareFile.addEventListener('click', () => {
+      closeModal('modal-group-info');
+      if (fileInputDoc) fileInputDoc.click();
+    });
+  }
+
+  if (btnPollAddOption) {
+    btnPollAddOption.addEventListener('click', () => {
+      const currentOptions = pollOptionsList.querySelectorAll('.poll-opt-input');
+      if (currentOptions.length >= 8) {
+        showToast('Maximum 8 options allowed per poll.');
+        return;
+      }
+      const row = document.createElement('div');
+      row.className = 'poll-option-row';
+      row.style.display = 'flex';
+      row.style.gap = '0.5rem';
+      row.style.alignItems = 'center';
+      row.innerHTML = `
+        <input type="text" class="form-input poll-opt-input" placeholder="Option ${currentOptions.length + 1}" maxlength="100" autocomplete="off" required style="flex: 1;">
+        <button type="button" class="icon-btn remove-opt-btn" style="color: var(--color-danger); width: 28px; height: 28px; font-size: 1rem;" title="Remove option">✕</button>
+      `;
+      row.querySelector('.remove-opt-btn').addEventListener('click', () => row.remove());
+      pollOptionsList.appendChild(row);
+    });
+  }
+
+  if (btnSubmitCreatePoll) {
+    btnSubmitCreatePoll.addEventListener('click', async () => {
+      if (!activeConversation || activeConversation.type !== 'group') return;
+      const question = (pollQuestionInput ? pollQuestionInput.value : '').trim();
+      if (!question) {
+        showToast('Please enter a poll question.');
+        return;
+      }
+
+      const optInputs = pollOptionsList.querySelectorAll('.poll-opt-input');
+      const optionTexts = [];
+      optInputs.forEach(input => {
+        const val = input.value.trim();
+        if (val) optionTexts.push(val);
+      });
+
+      if (optionTexts.length < 2) {
+        showToast('Please provide at least 2 poll options.');
+        return;
+      }
+
+      const choiceTypeRadio = document.querySelector('input[name="poll-choice-type"]:checked');
+      const isMultipleChoice = choiceTypeRadio ? (choiceTypeRadio.value === 'multiple') : false;
+      const duration = parseInt((pollDurationSelect ? pollDurationSelect.value : '0'), 10) || 0;
+      const isAnonymous = pollAnonymousCheck ? pollAnonymousCheck.checked : false;
+
+      const pollId = 'poll_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      const messageId = 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      const timestamp = Date.now();
+      const closingTime = duration > 0 ? (timestamp + duration) : null;
+
+      const pollData = {
+        id: pollId,
+        question,
+        options: optionTexts.map(text => ({ text, votes: [] })),
+        isMultipleChoice,
+        isAnonymous,
+        closingTime,
+        closed: false,
+        creator: currentAccount.username,
+        totalVotes: 0
+      };
+
+      const msgRecord = {
+        id: messageId,
+        conversationId: activeConversation.id,
+        groupId: activeConversation.groupId,
+        epoch: activeConversation.epoch || 1,
+        sender: currentAccount.username,
+        senderName: currentAccount.displayName || currentAccount.username,
+        recipient: activeConversation.groupId,
+        content: `📊 Poll: ${question}`,
+        type: 'poll',
+        poll: pollData,
+        timestamp,
+        status: 'sending',
+        isOutgoing: true,
+        reactions: {}
+      };
+
+      closeModal('modal-create-poll');
+      await window.MyCircleStorage.saveMessage(msgRecord);
+      appendMessageBubble(msgRecord);
+      await loadConversations();
+
+      try {
+        const groupPacket = await window.MyCircleGroupCrypto.encryptGroupMessage(
+          activeConversation.groupId,
+          msgRecord.content,
+          currentAccount,
+          {
+            id: messageId,
+            timestamp,
+            type: 'poll',
+            poll: pollData
+          }
+        );
+        window.MyCircleSignaling.sendGroupEncryptedPacket(groupPacket, activeConversation.members);
+        await window.MyCircleStorage.updateMessageStatus(messageId, 'sent');
+      } catch (err) {
+        console.error('Failed to broadcast poll:', err);
+        await window.MyCircleStorage.updateMessageStatus(messageId, 'failed');
+        showToast('Failed to broadcast poll');
+      }
+    });
+  }
+
+  window.votePoll = async function (msgId, optionIndex) {
+    if (!currentAccount || !activeConversation || activeConversation.type !== 'group') return;
+    const msg = await window.MyCircleStorage.getMessageById(msgId);
+    if (!msg || !msg.poll) return;
+
+    const poll = msg.poll;
+    if (poll.closed || (poll.closingTime && Date.now() > poll.closingTime)) {
+      showToast('This poll is closed and no longer accepts votes.');
+      return;
+    }
+
+    const updatedPoll = await window.MyCircleStorage.updateGroupPollVote(msgId, [optionIndex], currentAccount.username);
+    if (!updatedPoll) return;
+
+    // Broadcast vote via signaling
+    window.MyCircleSignaling.sendGroupPollVote({
+      groupId: activeConversation.groupId,
+      messageId: msgId,
+      optionIndexes: [optionIndex],
+      voter: currentAccount.username,
+      memberList: activeConversation.members
+    });
+
+    await loadMessages(activeConversation.id);
+  };
+
+  window.closePoll = async function (msgId, event) {
+    if (event) event.stopPropagation();
+    if (!currentAccount || !activeConversation || activeConversation.type !== 'group') return;
+    const msg = await window.MyCircleStorage.getMessageById(msgId);
+    if (!msg || !msg.poll) return;
+
+    const isCreator = msg.poll.creator && msg.poll.creator.toLowerCase() === currentAccount.username.toLowerCase();
+    const isAdmin = activeConversation.admin === currentAccount.username;
+    if (!isCreator && !isAdmin) {
+      showToast('Only the poll creator or circle admin can close this poll.');
+      return;
+    }
+
+    await window.MyCircleStorage.closeGroupPoll(msgId, currentAccount.username);
+    window.MyCircleSignaling.sendGroupPollClose({
+      groupId: activeConversation.groupId,
+      messageId: msgId,
+      closedBy: currentAccount.username,
+      memberList: activeConversation.members
+    });
+
+    await loadMessages(activeConversation.id);
+    showToast('Poll closed');
+  };
+
+  // Wire Send Button & Enter Key Press Listeners
+  if (btnSendMessage) {
+    btnSendMessage.addEventListener('click', sendMessage);
+  }
+
+  if (messageInput) {
+    messageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  }
 
   // ==========================================================================
   // New Group Modal

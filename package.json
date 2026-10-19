@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "node tests/crypto-test.js && node tests/features-e2e-test.js"
+    "test": "node tests/crypto-test.js && node tests/features-e2e-test.js && node tests/e2e-integration-test.js && node tests/new-features-test.js"
   },
   "keywords": [],
   "author": "",

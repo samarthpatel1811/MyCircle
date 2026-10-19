@@ -395,6 +395,181 @@
     });
   }
 
+  async function updateMessageContent(messageId, newContent, editedAt) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['messages', 'conversations'], 'readwrite');
+      const msgStore = tx.objectStore('messages');
+      const convStore = tx.objectStore('conversations');
+
+      const req = msgStore.get(messageId);
+      req.onsuccess = () => {
+        const msg = req.result;
+        if (!msg) return;
+
+        msg.content = newContent;
+        msg.isEdited = true;
+        msg.editedAt = editedAt || Date.now();
+        msgStore.put(msg);
+
+        const convReq = convStore.get(msg.conversationId);
+        convReq.onsuccess = () => {
+          const conv = convReq.result;
+          if (conv && conv.lastMessage && conv.lastMessage.id === msg.id) {
+            conv.lastMessage.content = newContent;
+            convStore.put(conv);
+          }
+        };
+      };
+
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function deleteMessageForEveryone(messageId) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['messages', 'conversations'], 'readwrite');
+      const msgStore = tx.objectStore('messages');
+      const convStore = tx.objectStore('conversations');
+
+      const req = msgStore.get(messageId);
+      req.onsuccess = () => {
+        const msg = req.result;
+        if (!msg) return;
+
+        msg.isDeleted = true;
+        msg.content = '🚫 This message was deleted';
+        msg.attachment = null;
+        msg.reactions = {};
+        msgStore.put(msg);
+
+        const convReq = convStore.get(msg.conversationId);
+        convReq.onsuccess = () => {
+          const conv = convReq.result;
+          if (conv && conv.lastMessage && conv.lastMessage.id === msg.id) {
+            conv.lastMessage.content = '🚫 This message was deleted';
+            convStore.put(conv);
+          }
+        };
+      };
+
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function deleteMessageForMe(messageId) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(['messages', 'conversations'], 'readwrite');
+      const msgStore = tx.objectStore('messages');
+      const convStore = tx.objectStore('conversations');
+
+      const req = msgStore.get(messageId);
+      req.onsuccess = () => {
+        const msg = req.result;
+        if (msg) {
+          msgStore.delete(messageId);
+
+          const convReq = convStore.get(msg.conversationId);
+          convReq.onsuccess = () => {
+            const conv = convReq.result;
+            if (conv && conv.lastMessage && conv.lastMessage.id === msg.id) {
+              conv.lastMessage.content = 'Message deleted';
+              convStore.put(conv);
+            }
+          };
+        }
+      };
+
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function updateGroupPollVote(messageId, optionIndexes, voter) {
+    const db = await openDatabase();
+    const voterClean = (voter || '').toLowerCase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('messages', 'readwrite');
+      const store = tx.objectStore('messages');
+      const req = store.get(messageId);
+
+      let updatedPoll = null;
+      req.onsuccess = () => {
+        const msg = req.result;
+        if (!msg || !msg.poll) return;
+
+        const poll = msg.poll;
+        if (poll.closed) return;
+        if (poll.closingTime && Date.now() > poll.closingTime) {
+          poll.closed = true;
+          store.put(msg);
+          updatedPoll = poll;
+          return;
+        }
+
+        const isMulti = !!poll.isMultipleChoice;
+        const normalizedIndexes = Array.isArray(optionIndexes) ? optionIndexes.map(Number) : [Number(optionIndexes)];
+
+        poll.options.forEach((opt, idx) => {
+          if (!Array.isArray(opt.votes)) opt.votes = [];
+          if (isMulti) {
+            if (normalizedIndexes.includes(idx)) {
+              const pos = opt.votes.indexOf(voterClean);
+              if (pos === -1) opt.votes.push(voterClean);
+              else opt.votes.splice(pos, 1);
+            }
+          } else {
+            const pos = opt.votes.indexOf(voterClean);
+            if (pos !== -1) opt.votes.splice(pos, 1);
+            if (normalizedIndexes.includes(idx)) {
+              opt.votes.push(voterClean);
+            }
+          }
+        });
+
+        const allVoters = new Set();
+        poll.options.forEach(opt => (opt.votes || []).forEach(v => allVoters.add(v)));
+        poll.totalVotes = allVoters.size;
+
+        msg.poll = poll;
+        store.put(msg);
+        updatedPoll = poll;
+      };
+
+      tx.oncomplete = () => resolve(updatedPoll);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function closeGroupPoll(messageId, closedBy) {
+    const db = await openDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('messages', 'readwrite');
+      const store = tx.objectStore('messages');
+      const req = store.get(messageId);
+
+      let updatedPoll = null;
+      req.onsuccess = () => {
+        const msg = req.result;
+        if (!msg || !msg.poll) return;
+
+        msg.poll.closed = true;
+        msg.poll.closedBy = closedBy;
+        msg.poll.closedAt = Date.now();
+        store.put(msg);
+        updatedPoll = msg.poll;
+      };
+
+      tx.oncomplete = () => resolve(updatedPoll);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+
   async function cleanupExpiredMessages() {
     const db = await openDatabase();
     const now = Date.now();
@@ -551,6 +726,11 @@
     getMessages,
     updateMessageStatus,
     updateMessageReactions,
+    updateMessageContent,
+    deleteMessageForEveryone,
+    deleteMessageForMe,
+    updateGroupPollVote,
+    closeGroupPoll,
     cleanupExpiredMessages,
     getPendingMessages,
     saveGroupKey,

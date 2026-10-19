@@ -485,6 +485,150 @@ class SignalingServer {
         break;
       }
 
+      // 10. Message Editing
+      case 'message-edit': {
+        const { conversationId, messageId, newContent, isGroup, memberList, recipient, editedAt } = msg;
+        if (!messageId) return;
+
+        const payload = {
+          type: 'message-edit',
+          conversationId,
+          messageId,
+          newContent,
+          sender,
+          editedAt: editedAt || Date.now()
+        };
+
+        if (isGroup && Array.isArray(memberList)) {
+          memberList.forEach(m => {
+            const member = m.toLowerCase();
+            if (member === sender) return;
+            if (this.isUserOnline(member)) {
+              this.sendToUser(member, payload);
+            } else {
+              if (!this.ephemeralMailbox.has(member)) {
+                this.ephemeralMailbox.set(member, []);
+              }
+              this.ephemeralMailbox.get(member).push(payload);
+            }
+          });
+        } else if (recipient) {
+          const rec = recipient.toLowerCase();
+          if (this.isUserOnline(rec)) {
+            this.sendToUser(rec, payload);
+          } else {
+            if (!this.ephemeralMailbox.has(rec)) {
+              this.ephemeralMailbox.set(rec, []);
+            }
+            this.ephemeralMailbox.get(rec).push(payload);
+          }
+        }
+        break;
+      }
+
+      // 11. Message Deletion
+      case 'message-delete': {
+        const { conversationId, messageId, isGroup, memberList, recipient } = msg;
+        if (!messageId) return;
+
+        const payload = {
+          type: 'message-delete',
+          conversationId,
+          messageId,
+          sender,
+          deletedAt: Date.now()
+        };
+
+        if (isGroup && Array.isArray(memberList)) {
+          memberList.forEach(m => {
+            const member = m.toLowerCase();
+            if (member === sender) return;
+            if (this.isUserOnline(member)) {
+              this.sendToUser(member, payload);
+            } else {
+              if (!this.ephemeralMailbox.has(member)) {
+                this.ephemeralMailbox.set(member, []);
+              }
+              this.ephemeralMailbox.get(member).push(payload);
+            }
+          });
+        } else if (recipient) {
+          const rec = recipient.toLowerCase();
+          if (this.isUserOnline(rec)) {
+            this.sendToUser(rec, payload);
+          } else {
+            if (!this.ephemeralMailbox.has(rec)) {
+              this.ephemeralMailbox.set(rec, []);
+            }
+            this.ephemeralMailbox.get(rec).push(payload);
+          }
+        }
+        break;
+      }
+
+      // 12. Group Poll Voting
+      case 'group-poll-vote': {
+        const { groupId, messageId, pollId, optionIndexes, memberList } = msg;
+        if (!messageId || !groupId) return;
+
+        const payload = {
+          type: 'group-poll-vote',
+          groupId,
+          messageId,
+          pollId,
+          optionIndexes,
+          voter: sender,
+          timestamp: Date.now()
+        };
+
+        if (Array.isArray(memberList)) {
+          memberList.forEach(m => {
+            const member = m.toLowerCase();
+            if (member === sender) return;
+            if (this.isUserOnline(member)) {
+              this.sendToUser(member, payload);
+            } else {
+              if (!this.ephemeralMailbox.has(member)) {
+                this.ephemeralMailbox.set(member, []);
+              }
+              this.ephemeralMailbox.get(member).push(payload);
+            }
+          });
+        }
+        break;
+      }
+
+      // 13. Group Poll Close
+      case 'group-poll-close': {
+        const { groupId, messageId, pollId, memberList } = msg;
+        if (!messageId || !groupId) return;
+
+        const payload = {
+          type: 'group-poll-close',
+          groupId,
+          messageId,
+          pollId,
+          closedBy: sender,
+          timestamp: Date.now()
+        };
+
+        if (Array.isArray(memberList)) {
+          memberList.forEach(m => {
+            const member = m.toLowerCase();
+            if (member === sender) return;
+            if (this.isUserOnline(member)) {
+              this.sendToUser(member, payload);
+            } else {
+              if (!this.ephemeralMailbox.has(member)) {
+                this.ephemeralMailbox.set(member, []);
+              }
+              this.ephemeralMailbox.get(member).push(payload);
+            }
+          });
+        }
+        break;
+      }
+
       default:
         console.warn('Unknown message type:', type);
     }

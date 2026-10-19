@@ -474,6 +474,44 @@
     };
   }
 
+  /**
+   * Encrypt arbitrary binary file buffer using AES-256-GCM
+   */
+  async function encryptBinaryData(key, arrayBuffer) {
+    const iv = cryptoObj.getRandomValues(new Uint8Array(12));
+    const ciphertext = await subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv: iv,
+        tagLength: 128
+      },
+      key,
+      arrayBuffer
+    );
+    return {
+      iv: bufferToBase64(iv),
+      ciphertext: bufferToBase64(ciphertext),
+      byteLength: ciphertext.byteLength
+    };
+  }
+
+  /**
+   * Decrypt arbitrary binary file buffer using AES-256-GCM
+   */
+  async function decryptBinaryData(key, ivInput, cipherInput) {
+    const iv = (typeof ivInput === 'string') ? base64ToBuffer(ivInput) : ivInput;
+    const ciphertext = (typeof cipherInput === 'string') ? base64ToBuffer(cipherInput) : cipherInput;
+    return await subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: new Uint8Array(iv),
+        tagLength: 128
+      },
+      key,
+      ciphertext
+    );
+  }
+
   return {
     generateIdentityKeyPairs,
     importECDHPublicKey,
@@ -494,8 +532,11 @@
     decryptGroupKeyFromAdmin,
     encryptGroupMessage,
     decryptGroupMessage,
+    encryptBinaryData,
+    decryptBinaryData,
     bufferToBase64,
     base64ToBuffer,
     bufferToHex
   };
 });
+

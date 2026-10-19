@@ -209,10 +209,14 @@
       sender: currentAccount.username,
       senderName: currentAccount.displayName || currentAccount.username,
       content,
+      type: extra.type || 'text',
+      attachment: extra.attachment || null,
+      poll: extra.poll || null,
       timestamp: extra.timestamp || Date.now(),
       expiresAt: extra.expiresAt || null,
       ttl: extra.ttl || null,
-      replyTo: extra.replyTo || null
+      replyTo: extra.replyTo || null,
+      ...extra
     };
 
     const encrypted = await window.MyCircleCrypto.encryptGroupMessage(groupKey, ecdsaPriv, messageData);

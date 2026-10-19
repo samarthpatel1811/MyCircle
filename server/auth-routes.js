@@ -163,6 +163,20 @@ function handleLogin(req, res) {
     }
 
     const user = result.user;
+
+    // If client supplied active device public keys, update them so peer encryption always matches current device
+    const { ecdhPublicKey, ecdsaPublicKey, fingerprint } = req.body;
+    if (ecdhPublicKey && ecdsaPublicKey) {
+      usersDirectory.updateUser(user.username, {
+        ecdhPublicKey,
+        ecdsaPublicKey,
+        fingerprint: fingerprint || user.fingerprint
+      });
+      user.ecdhPublicKey = ecdhPublicKey;
+      user.ecdsaPublicKey = ecdsaPublicKey;
+      if (fingerprint) user.fingerprint = fingerprint;
+    }
+
     const token = createSessionToken(user.username);
 
     res.json({
@@ -183,6 +197,29 @@ function handleLogin(req, res) {
 }
 
 router.post('/login', handleLogin);
+
+// Update user cryptographic public keys (e.g. on new device or browser session)
+router.post('/update-keys', requireAuth, (req, res) => {
+  try {
+    const { ecdhPublicKey, ecdsaPublicKey, fingerprint } = req.body;
+    if (!ecdhPublicKey || !ecdsaPublicKey) {
+      return res.status(400).json({ error: 'Missing ecdhPublicKey or ecdsaPublicKey' });
+    }
+    const updated = usersDirectory.updateUser(req.user.username, {
+      ecdhPublicKey,
+      ecdsaPublicKey,
+      fingerprint: fingerprint || req.user.fingerprint
+    });
+    res.json({
+      success: true,
+      user: usersDirectory.getPublicProfile(req.user.username)
+    });
+  } catch (err) {
+    console.error('Update keys error:', err);
+    res.status(500).json({ error: 'Failed to update identity keys' });
+  }
+});
+
 router.post('/login-fallback', handleLogin);
 
 // ==========================================================================

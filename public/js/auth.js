@@ -127,6 +127,24 @@
         sessionToken: data.token,
         authMethod: 'password'
       };
+
+      // Notify server of active device public keys so all incoming E2EE messages use this device's keys
+      try {
+        await fetch('/api/auth/update-keys', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${data.token}`
+          },
+          body: JSON.stringify({
+            ecdhPublicKey: identity.jwk.ecdhPublic,
+            ecdsaPublicKey: identity.jwk.ecdsaPublic,
+            fingerprint: identity.fingerprint
+          })
+        });
+      } catch (keyErr) {
+        console.warn('Failed to sync public keys with server:', keyErr);
+      }
     } else {
       account.sessionToken = data.token;
       account.displayName = data.user.displayName || account.displayName;

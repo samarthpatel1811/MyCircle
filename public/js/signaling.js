@@ -200,6 +200,22 @@
           this.emit('disappearing-setting-changed', msg);
           break;
 
+        case 'message-edit':
+          this.emit('message-edit', msg);
+          break;
+
+        case 'message-delete':
+          this.emit('message-delete', msg);
+          break;
+
+        case 'group-poll-vote':
+          this.emit('group-poll-vote', msg);
+          break;
+
+        case 'group-poll-close':
+          this.emit('group-poll-close', msg);
+          break;
+
         // WebRTC Signaling messages
         case 'rtc-offer':
           await this.handleRtcOffer(msg.from, msg.data);
@@ -444,6 +460,38 @@
     sendDisappearingSetting(data) {
       return this.send({
         type: 'disappearing-setting-changed',
+        sender: this.currentUser,
+        ...data
+      });
+    }
+
+    sendMessageEdit(data) {
+      return this.send({
+        type: 'message-edit',
+        sender: this.currentUser,
+        ...data
+      });
+    }
+
+    sendMessageDelete(data) {
+      return this.send({
+        type: 'message-delete',
+        sender: this.currentUser,
+        ...data
+      });
+    }
+
+    sendGroupPollVote(data) {
+      return this.send({
+        type: 'group-poll-vote',
+        sender: this.currentUser,
+        ...data
+      });
+    }
+
+    sendGroupPollClose(data) {
+      return this.send({
+        type: 'group-poll-close',
         sender: this.currentUser,
         ...data
       });
